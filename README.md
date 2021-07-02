@@ -38,6 +38,10 @@ Note the CP1 will wait 16 seconds before starting the transfer.
 The transfer will take about 3,5 mins or 7 mins with memory expansion installed.
 This cannot be sped up, because the CP1 determines the speed of communication.
 
+The data is received and written to the file.
+If you don't have a memory extension installed, you might have to press CAS and STP
+after the CP1 is ready, because the script still waits for the rest of the data.
+
 
 kosmos_send.py filename.json
 ----------------------------
@@ -45,9 +49,9 @@ kosmos_send.py filename.json
 The counter part of kosmos_recv.py. Sends a compatible .json file data to the CP1.
 After starting the script, press CAL on your CP1.
 
-The data is received and written to the file.
-If you don't have a memory extension installed, you might have to press CAS and STP
-after the CP1 is ready, because the script still waits for the rest of the data.
+This transfer is somewhat faster, because we control the transmission. If
+errors occur, try to increase the time_base - Parameter in the script.
+Mine works fine wirh 15, 33 is the original speed.
 
 
 kosmos_json_show.py filename.json
