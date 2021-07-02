@@ -56,14 +56,17 @@ kosmos_disasm.php [-i] [-c] [-d] [-o] filename.json
 
 Disassembles the .json file and creates a .koa assembly language file
 Options:
+```
        -c show code
        -d show description
        -i show inline numerics
        -o create filename.koa
+```
 
 By default, kosmos_disasm only shows the assembly-tokens and the labels it
 has detected. Line numbers are omitted if possible:
 
+```
 kosmos_disasm.php lichtband.json
 
 >label_1:
@@ -87,8 +90,11 @@ kosmos_disasm.php lichtband.json
       VGL wert_3
       [...]
 
+```
 With -c option you can additionally display the decimal codes entered in the CP1 
 including all line numbers.
+
+```
 
 kosmos_disasm.php lichtband.json -c
 
@@ -113,9 +119,12 @@ kosmos_disasm.php lichtband.json -c
       VGL wert_3              |  015: 10.069
       [...]
 
+```
 
 With -d option you can display the explanation of every command (in german):
 
+
+```
 kosmos_disasm.php lichtband.json -c -d
 
 >label_1:
@@ -139,6 +148,7 @@ kosmos_disasm.php lichtband.json -c -d
       VGL wert_3              |  015: 10.069  |  Prüfen, ob Akku gleich Inhalt von Zelle 69 (wert_3) ist
       [...]
 
+```
 
 Option -o writes the disassembled text into a .koa file.
 
