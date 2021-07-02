@@ -72,7 +72,7 @@ $cmddesc = array(
 
 $noarg = array("HLT","ANZ","NEG");
 
-if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] [-o] [-s] [-r] filename.koa\n".
+if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] filename.koa\n".
   "Options:  -c show code\n".
   "          -d show description\n".
   "          -i show inline numerics\n".
