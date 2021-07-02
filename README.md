@@ -17,7 +17,9 @@ be connected to Pin 8 at Port 1 of the CP1.
 
 Beware: The CP1 is a 5V device, therefore the voltage to the raspi has to be limited.
 It turns out a simple zener diode with a resistor does the job:
-                     
+
+```                     
+
 GPIO: --------o-----[1 kOhm]------ Port 1/8
               |
             -----,
@@ -26,6 +28,9 @@ GPIO: --------o-----[1 kOhm]------ Port 1/8
             -----
               |
 GND:  --------o-------------------- GND 
+
+
+```
 
 After the script has been started, press CAS on your CP1.
 Note the CP1 will wait 16 seconds before starting the transfer.
