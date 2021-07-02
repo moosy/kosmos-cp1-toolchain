@@ -78,7 +78,7 @@ By default, kosmos_disasm only shows the assembly-tokens and the labels it
 has detected. Line numbers are omitted if possible:
 
 ```
-kosmos_disasm.php lichtband.json
+user@machine:# kosmos_disasm.php lichtband.json
 
 >label_1:
 
@@ -107,7 +107,7 @@ including all line numbers.
 
 
 ```
-kosmos_disasm.php lichtband.json -c
+user@machine:# kosmos_disasm.php lichtband.json -c
 
 >label_1:
 
@@ -136,7 +136,7 @@ With -d option you can display the explanation of every command (in german):
 
 
 ```
-kosmos_disasm.php lichtband.json -c -d
+user@machine:# kosmos_disasm.php lichtband.json -c -d
 
 >label_1:
 
@@ -168,14 +168,17 @@ Option -o writes the disassembled text into a .koa file.
 kosmos_asm.php [-i] [-c] [-d] [-o] [-s] [-r] filename.koa
 ---------------------------------------------------------
 
-Options:  -c show code
+Options:  
+```          
+          -c show code
           -d show description
           -i show inline numerics
           -o create filename.json
           -s create filename.json and start transfer to CP1
           -r rewrite (beautify) input file
+```
 
-This is the CP1 assembler. You can just begin using the CP1 Mnemonics and either numeric or symbolic parameters.
+This is the CP1 assembler. You can just begin using the CP1 mnemonics and either numeric or symbolic parameters.
 If you use symbolic parameters you have to declare them somewhere with an leading '>'.
 You don't have to specify line numbers at all, if you do the assembler will try to assign them as you specified them.
 Data values are marked with the mnemonic '#'.
@@ -253,6 +256,7 @@ Alternatively, you can tell the assembler to display them inline with the -i opt
 
 ```
 user@machine:# kosmos_asm.php example.koa -i
+
  (000) AKO 000
 
 >loop:
@@ -282,13 +286,22 @@ transfer to the CP1 begins.
 Installation and Prerequisites
 ------------------------------
 
-Installation is pretty straightforward: Just copy the files to any location on your raspberry pi filesystem and 
-set the execution flags (e.g. with chmod +x *.php *.py).
+Installation is pretty straightforward: Just copy the files to any location on your raspberry pi filesystem
+(recommended: /usr/local/bin) and set the execution flags (e.g. with chmod +x *.php *.py).
+If you don't ust /usr/local/bin you might want to adapt the path at the end
+of the kosmos_asm.php:
+
+```
+if ($send) passthru("/usr/local/bin/kosmos_send.py $fo");
+                     ^^^^^^^^^^^^^^^
+```
+
 
 The standard raspberian os distribution should contain anything you need, perhaps except from the php-package
-which needs to be installed manualls:
+which needs to be installed manually:
 
 ```
 user@machine:# apt-get update
 user@machine:# apt-get install php
 ```
+
