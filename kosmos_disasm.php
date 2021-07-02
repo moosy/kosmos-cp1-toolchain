@@ -76,11 +76,12 @@ $valarg = array("LDA","ABS","ADD","SUB","VGL","VGR","VKL","UND","LIA","AIS","SIU
 $adrarg = array("LIA","AIS","SIU");
 
 
-if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] filename.koa\n       -c show code\n       -d show description\n       -i show inline numerics\n       Creates filename.json\n");
+if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] filename.koa\n       -c show code\n       -d show description\n       -i show inline numerics\n       -o create filename.json\n");
 
 $beauty = "STANDARD";
 $showdesc = false;
 $showcode = false;
+$output = false;
 
 $carg = array_shift($argv);
 
@@ -88,6 +89,7 @@ while ($carg = array_shift($argv)){
   if ($carg == "-i") $beauty = "INLINE"; else
   if ($carg == "-d") $showdesc = true; else
   if ($carg == "-c") $showcode = true; else
+  if ($carg == "-o") $output = true; else
   $fn = $carg;
 }
 
@@ -198,14 +200,16 @@ foreach ($in as $line => $c){
 
 }
 
-
-/*
-$f = fopen($fo,"w"); 
-fwrite($f,json_encode($out)."\n");
-fclose($f);
-*/
 $bs = implode("\n",$btfy)."\n";
 print($bs);
-/*
-fwrite(STDERR,"$fo successfully written.\n");
-*/
+
+
+if ($output){
+  $f = fopen($fo,"w");
+  fwrite($f,json_encode($out)."\n");
+  fclose($f);
+  fwrite(STDERR,"Output file $fo written.\n");
+}
+
+
+
