@@ -76,7 +76,7 @@ $valarg = array("LDA","ABS","ADD","SUB","VGL","VGR","VKL","UND","LIA","AIS","SIU
 $adrarg = array("LIA","AIS","SIU");
 
 
-if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] [-o] filename.koa\n       -c show code\n       -d show description\n       -i show inline numerics\n       -o create filename.json\n");
+if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] [-o] filename.json\n       -c show code\n       -d show description\n       -i show inline numerics\n       -o create filename.koa\n");
 
 $beauty = "STANDARD";
 $showdesc = false;
