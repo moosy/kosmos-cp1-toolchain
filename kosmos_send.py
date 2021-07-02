@@ -14,7 +14,7 @@ if len(sys.argv) < 2:
 fn = sys.argv[1]
 
 if fn[-5:] != ".json":
-  print("ERROR: File does not end in .json");
+  print("ERROR: File does not end with .json");
   sys.exit(1)
 
 
@@ -25,22 +25,22 @@ with open(fn) as f:
 
 
 # Rearrange data:
-# 1. Command of Cell 0 (1 Byte)
-# 2. Argument, Data of Cell 127 - 0, descending. Command of Cell 0 is omitted
-# 3. Command of Cell 128 (1 Byte)
-# 4. Argument, Data of Cell 255 - 128, descending
+# 1. Command of cell 0 (1 byte).
+# 2. Argument, data of cell 127 - 0, descending. Command of cell 0 is omitted
+# 3. Command of cell 128 (1 byte)
+# 4. Argument, data of cell 255 - 128, descending.
 
 data = [];
-data.append(indata["000"][0]); # Command of Cell[0];
+data.append(indata["000"][0]); # Command of cell[0];
 
 for i in range(0,128):     # Cell 127 - 0
   data.append(indata[str(127-i).zfill(3)][1])
   if (i < 127):
     data.append(indata[str(127-i).zfill(3)][0])
 
-data.append(indata["128"][0]); # Command of Cell[128];
+data.append(indata["128"][0]); # Command of cell[128];
   
-for i in range(128,256):     # Cell 255 - 128
+for i in range(128,256):     # cell 255 - 128
   data.append(indata[str(383-i).zfill(3)][1])
 #  if (i < 255):
   data.append(indata[str(383-i).zfill(3)][0])
@@ -50,7 +50,7 @@ led = LED(26, True, True);
 
 t = [ [ time_base * 2, time_base] , [ time_base , time_base * 2 ] ]
 
-print("Starting transfer to Kosmos CP1. Ensure that Interface is turned on.")
+print("Starting the transfer to the Kosmos CP1. Make sure that the interface is switched on.")
 print(str(len(data))+ " bytes to send.")
 print("\nPress CAL on CP1 within 5 seconds.")
 

@@ -16,7 +16,7 @@ It is designed to run on a raspberry pi, where one GPIO Pin (I use GPIO 26) has 
 be connected to Pin 8 at Port 1 of the CP1.
 
 Beware: The CP1 is a 5V device, therefore the voltage to the raspi has to be limited.
-It turns out a simple zener diode with a resistor does the job:
+It turns out a simple Zener diode with a resistor does the job:
 
 ```                     
 GPIO: --------o-----[1 kOhm]------ Port 1/8
@@ -48,8 +48,8 @@ The counterpart of kosmos_recv.py. Sends a compatible .json file data to the CP1
 After starting the script, press CAL on your CP1.
 
 This transfer is somewhat faster, because we control the transmission. If
-errors occur, try to increase the time_base - Parameter in the script.
-Mine works fine wirh 15, 33 is the original speed.
+errors occur, try to increase the time_base - parameter in the script.
+Mine works fine wirh 15; a value of 33 is the original speed.
 
 
 
@@ -179,7 +179,8 @@ Options:
 ```
 
 This is the CP1 assembler. You can just begin using the CP1 mnemonics and either numeric or symbolic parameters.
-If you use symbolic parameters you have to declare them somewhere with an leading '>'.
+If you use symbolic parameters you have to declare them somewhere with a leading '>'.
+
 You don't have to specify line numbers at all, if you do the assembler will try to assign them as you specified them.
 Data values are marked with the mnemonic '#'.
 
@@ -214,7 +215,7 @@ user@machine:# kosmos_asm.php example.koa
       # 001
 ```
 
-As you see the assembler beautified your code. You don't see any assembled code because you neither told the
+As you see, the assembler beautified your code. You don't see any assembled code because you neither told the
 assembler to display it nor to write it to file. 
 
 With the -c option you see the code:
@@ -288,7 +289,7 @@ Installation and Prerequisites
 
 Installation is pretty straightforward: Just copy the files to any location on your raspberry pi filesystem
 (recommended: /usr/local/bin) and set the execution flags (e.g. with chmod +x *.php *.py).
-If you don't ust /usr/local/bin you might want to adapt the path at the end
+If you don't use /usr/local/bin you might want to adapt the path at the end
 of the kosmos_asm.php:
 
 ```
@@ -297,7 +298,7 @@ if ($send) passthru("/usr/local/bin/kosmos_send.py $fo");
 ```
 
 
-The standard raspberian os distribution should contain anything you need, perhaps except from the php-package
+The standard raspberian OS distribution should contain anything you need, perhaps except from the php-package
 which needs to be installed manually:
 
 ```

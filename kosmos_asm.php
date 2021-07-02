@@ -43,31 +43,31 @@ $cmd = array(
 );
 
 $cmddesc = array(
-  0 => "Datenwert %s",
-  1 => "Halt",
-  2 => "Akku-Inhalt anzeigen",
-  3 => "Verzögern um %s ms",
-  4 => "Konstante %s in den Akku laden",
-  5 => "Inhalt von Zelle %s in den Akku laden",
-  6 => "Akku-Inhalt in Zelle %s speichern",
-  7 => "Zum Akku Inhalt von Zelle %s addieren",
-  8 => "Vom Akku Inhalt von Zelle %s subtrahieren",
-  9 => "Springe zu Adresse %s",
-  10 => "Prüfen, ob Akku gleich Inhalt von Zelle %s ist",
-  11 => "Wenn ja, springe zu Adresse %s",
-  12 => "Prüfen, ob Akku größer als Inhalt von Zelle %s ist",
-  13 => "Prüfen, ob Akku kleiner als Inhalt von Zelle %s ist",
-  14 => "Akku-Inhalt negieren (nur 0 oder 1)",
-  15 => "UND-Verknüpfung Akku und Zelle %s (nur 0 oder 1)",
-  16 => "Klemme %s von Port 1 in Akku lesen (000 = alle)",
-  17 => "Akku-Inhalt an Klemme %s von Port 1 legen (000 = alle)",
-  18 => "Akku-Inhalt an Klemme %s von Port 2 legen (000 = alle)",
-  19 => "Akku mit Inhalt der Zelle laden, deren Adresse unter %s steht",
-  20 => "Akku in der Zelle speichern, deren Adresse unter %s steht",
-  21 => "Springe zur Adresse, die in Zelle %s steht",
-  22 => "Klemme %s von Port 3 in Akku lesen (000 = alle)",
-  23 => "Akku-Inhalt an Klemme %s von Port 4 legen (000 = alle)",
-  24 => "Akku-Inhalt an Klemme %s von Port 5 legen (000 = alle)"
+  0 => "Data value %s",
+  1 => "Stop",
+  2 => "Display accumulator content",
+  3 => "Delay by %s ms",
+  4 => "Load constant %s into accumulator",
+  5 => "Load content of cell %s into accumulator",
+  6 => "Store accumulator content into cell %s",
+  7 => "Add content of cell %s to accumulator",
+  8 => "Subtract from accumulator content of cell %s",
+  9 => "Jump to address %s",
+  10 => "Check if the accumulator is equal to the content of cell %s",
+  11 => "If yes, jump to address %s",
+  12 => "Check if the accumulator is greater than the content of cell %s",
+  13 => "Check if accumulator is smaller than the content of cell %s",
+  14 => "Negate accumulator content (0 or 1 only)",
+  15 => "AND operation accumulator and cell %s (0 or 1 only)",
+  16 => "Read terminal %s from port 1 to accumulator (000 = all)",
+  17 => "Put accumulator content into terminal %s of port 1 (000 = all)",
+  18 => "Put accumulator content into terminal %s of port 2 (000 = all)",
+  19 => "Charge accumulator with the content of the cell whose address is at %s",
+  20 => "Place accumulator in the cell whose address is at %s",
+  21 => "Jump to the address which is in the cell %s",
+  22 => "Read terminal %s from port 3 into the accumulator (000 = all)",
+  23 => "Put accumulator content into terminal %s of port 4 (000 = all)",
+  24 => "Put accumulator content into terminal %s of port 5 (000 = all)".
 );
 
 $noarg = array("HLT","ANZ","NEG");
@@ -177,17 +177,17 @@ for ($rounds=0; $rounds<2; $rounds++){ # two identical runs for labels
     $line = str_pad($line, 3, "0", STR_PAD_LEFT);
     $cs = strtoupper(array_shift($li));
     $c1 = array_search($cs,$cmd);
-    if ($c1 === false) die("ERROR: Command $cs not known (Line $line)!\n");
+    if ($c1 === false) die("ERROR: Command $cs not known (line $line)!\n");
     $c2 = array_shift($li);
     if (substr(trim($c2),0,1)=="|") $c2 = 0;
     if (substr(trim($c2),0,2)=="//") $c2 = 0;
     if (trim($c2)=="") $c2 = 0;
     if (!is_numeric($c2) && !$firstrun){
-      if  (!array_key_exists($c2,$labels)) die("ERROR: Label $c2 not found! (Line $line)!\n");
+      if  (!array_key_exists($c2,$labels)) die("ERROR: Label $c2 not found! (line $line)!\n");
       $has_label = $c2;
       $c2 = $labels[$c2];
     }
-    if ($filled[(int)$line]) die("ERROR: Line $line is already set (conflict hardcoded/autoassigned line?)!\n");
+    if ($filled[(int)$line]) die("ERROR: Line $line is already set (conflict hardcoded/automatically assigned line?)!\n");
     $out[$line] = array((int)$c1,(int)$c2);
     $filled[(int)$line] = true;
 

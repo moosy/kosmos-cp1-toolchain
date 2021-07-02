@@ -12,7 +12,7 @@ if len(sys.argv) < 2:
 fn = sys.argv[1]
 
 if fn[-5:] != ".json":
-  print("ERROR: File does not end in .json");
+  print("ERROR: File does not end with .json");
   sys.exit(1)
 
 fo = fn.replace("json","koa");
