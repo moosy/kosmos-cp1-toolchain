@@ -19,7 +19,6 @@ Beware: The CP1 is a 5V device, therefore the voltage to the raspi has to be lim
 It turns out a simple zener diode with a resistor does the job:
 
 ```                     
-
 GPIO: --------o-----[1 kOhm]------ Port 1/8
               |
             -----,
@@ -28,8 +27,6 @@ GPIO: --------o-----[1 kOhm]------ Port 1/8
             -----
               |
 GND:  --------o-------------------- GND 
-
-
 ```
 
 After the script has been started, press CAS on your CP1.
@@ -43,15 +40,17 @@ If you don't have a memory extension installed, you might have to press CAS and 
 after the CP1 is ready, because the script still waits for the rest of the data.
 
 
+
 kosmos_send.py filename.json
 ----------------------------
 
-The counter part of kosmos_recv.py. Sends a compatible .json file data to the CP1.
+The counterpart of kosmos_recv.py. Sends a compatible .json file data to the CP1.
 After starting the script, press CAL on your CP1.
 
 This transfer is somewhat faster, because we control the transmission. If
 errors occur, try to increase the time_base - Parameter in the script.
 Mine works fine wirh 15, 33 is the original speed.
+
 
 
 kosmos_json_show.py filename.json
@@ -60,11 +59,14 @@ kosmos_json_show.py filename.json
 Shows the content of the .json file in a decent way and shows the opcodes.
 
 
+
 kosmos_disasm.php [-i] [-c] [-d] [-o] filename.json
 ---------------------------------------------------
 
 Disassembles the .json file and creates a .koa assembly language file
+
 Options:
+
 ```
        -c show code
        -d show description
@@ -103,8 +105,8 @@ kosmos_disasm.php lichtband.json
 With -c option you can additionally display the decimal codes entered in the CP1 
 including all line numbers.
 
-```
 
+```
 kosmos_disasm.php lichtband.json -c
 
 >label_1:
@@ -161,3 +163,132 @@ kosmos_disasm.php lichtband.json -c -d
 
 Option -o writes the disassembled text into a .koa file.
 
+
+
+kosmos_asm.php [-i] [-c] [-d] [-o] [-s] [-r] filename.koa
+---------------------------------------------------------
+
+Options:  -c show code
+          -d show description
+          -i show inline numerics
+          -o create filename.json
+          -s create filename.json and start transfer to CP1
+          -r rewrite (beautify) input file
+
+This is the CP1 assembler. You can just begin using the CP1 Mnemonics and either numeric or symbolic parameters.
+If you use symbolic parameters you have to declare them somewhere with an leading '>'.
+You don't have to specify line numbers at all, if you do the assembler will try to assign them as you specified them.
+Data values are marked with the mnemonic '#'.
+
+Example:
+
+```
+AKO 0
+>loop:
+ANZ
+VZG 250
+ADD one
+SPU loop
+
+>one:
+# 1
+```
+
+If you call the kosmos_asm.php it will output this:
+
+```
+user@machine:# kosmos_asm.php example.koa
+
+      AKO 000
+
+>loop:
+      ANZ
+      VZG 250
+      ADD one
+      SPU loop
+
+>one:
+      # 001
+```
+
+As you see the assembler beautified your code. You don't see any assembled code because you neither told the
+assembler to display it nor to write it to file. 
+
+With the -c option you see the code:
+
+```
+user@machine:# kosmos_asm.php example.koa -c
+      AKO 000                 |  000: 04.000
+
+>loop:
+      ANZ                     |  001: 02.000
+      VZG 250                 |  002: 03.250
+      ADD one                 |  003: 07.005
+      SPU loop                |  004: 09.001
+
+>one:
+      # 001                   |  005: 00.001
+```
+
+If you add the -d option you get a (german) explanation of every command:
+
+```
+user@machine:# kosmos_asm.php example.koa -c -d
+
+      AKO 000                 |  000: 04.000  |  Konstante 000 in den Akku laden
+
+>loop:
+      ANZ                     |  001: 02.000  |  Akku-Inhalt anzeigen
+      VZG 250                 |  002: 03.250  |  Verzögern um 250 ms
+      ADD one                 |  003: 07.005  |  Zum Akku Inhalt von Zelle 005 (one) addieren
+      SPU loop                |  004: 09.001  |  Springe zu Adresse 001 (loop)
+
+>one:
+      # 001                   |  005: 00.001  |  Datenwert 001
+
+```
+
+You can see the real values of the symbolic constants and the line number in the code section.
+Alternatively, you can tell the assembler to display them inline with the -i option:
+
+```
+user@machine:# kosmos_asm.php example.koa -i
+ (000) AKO 000
+
+>loop:
+ (001) ANZ
+ (002) VZG 250
+ (003) ADD one (005)
+ (004) SPU loop (001)
+
+>one:
+ (005) # 001
+
+```
+
+Bracketed line numbers are auto-assigned by the assembler.
+
+If you like the beautified output, you can use the -r option to rewrite your source file with the beautified version.
+
+Note: You can add comments by starting a line with '//'. These comments are preserved by the assembler.
+You can add comments at the end of each line starting with '//' as well, but these are NOT preserved in the
+beautified output. It is recommended to use dedicated comment lines for this reason.
+
+With the -o option you can tell the assembler to write a .json file for further use, e.g. for writing it
+to the CP1. If you use the -s option, the kosmos_send.py tool is invoked automatically and the 
+transfer to the CP1 begins.
+
+
+Installation and Prerequisites
+------------------------------
+
+Installation is pretty straightforward: Just copy the files to any location on your raspberry pi filesystem and 
+set the execution flags (e.g. with chmod +x *.php *.py).
+
+The standard raspberian os distribution should contain anything you need, perhaps except from the php-package
+which needs to be installed manualls:
+
+```
+user@machine:# apt-get update
+user@machine:# apt-get install php
+```

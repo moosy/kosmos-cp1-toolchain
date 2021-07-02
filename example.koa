@@ -1,0 +1,9 @@
+AKO 0
+>loop:
+ANZ
+VZG 250
+ADD one
+SPU loop
+
+>one:
+# 1
