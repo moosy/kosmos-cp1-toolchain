@@ -16,7 +16,7 @@ if len(sys.argv) < 2:
 fn = sys.argv[1]
 
 if fn[-5:] != ".json":
-  print("ERROR: File does not end in .json");
+  print("ERROR: File does not end with .json");
   sys.exit(1)
 
 btn = Button(26, True);
@@ -37,7 +37,7 @@ frst_cmd = 0;
 
 data = {}
 
-print("Receive memory content from Kosmos CP1")
+print("Receiving the memory contents from the Kosmos CP1")
 print("Press CAS on CP1!")
 
 btn.wait_for_release()
@@ -53,8 +53,8 @@ while (cnt < 900):
   dt1 = t1 - t0
   if (dt1 > 100000):
     break
-  if (dt1 < 2200): print ('  WARNING: release too short ' + str(dt1) + "\n")
-  if (dt1 > 7800): print ('  WARNING: release too long ' + str(dt1)+ "\n")
+  if (dt1 < 2200): print ('  WARNING: Release too short ' + str(dt1) + "\n")
+  if (dt1 > 7800): print ('  WARNING: Release too long ' + str(dt1)+ "\n")
 
   btn.wait_for_press()
   t0 = milli_time()
@@ -62,8 +62,8 @@ while (cnt < 900):
   if (dt2 > 100000):
     break
 
-  if (dt2 < 2200): print ('  WARNING: press too short ' + str(dt2)+ "\n")
-  if (dt2 > 7800): print ('  WARNING: press too long '+ str(dt2) +"\n")
+  if (dt2 < 2200): print ('  WARNING: Press too short ' + str(dt2)+ "\n")
+  if (dt2 > 7800): print ('  WARNING: Press too long '+ str(dt2) +"\n")
 
 
 #  print ('pressed: '+str(dt2))
