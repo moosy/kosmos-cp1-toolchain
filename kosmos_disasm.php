@@ -206,7 +206,7 @@ print($bs);
 
 if ($output){
   $f = fopen($fo,"w");
-  fwrite($f,json_encode($out)."\n");
+  fwrite($f,$bs);
   fclose($f);
   fwrite(STDERR,"Output file $fo written.\n");
 }
