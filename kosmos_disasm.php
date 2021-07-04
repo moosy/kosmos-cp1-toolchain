@@ -93,14 +93,28 @@ while ($carg = array_shift($argv)){
   $fn = $carg;
 }
 
-if (substr($fn,-5) != ".json") die("ERROR: Filename does not end with .json\n");
+if (substr($fn,-5) == ".json"){
 
-$fo = str_replace(".json",".koa",$fn);
 
-if (!file_exists($fn)) die("ERROR: File not found.\n");
+  if (!file_exists($fn)) die("ERROR: File not found.\n");
+  $fo = str_replace(".json",".koa",$fn);
+  $ins = file($fn);
+  $in = json_decode(array_shift($ins),true);
 
-$ins = file($fn);
-$in = json_decode(array_shift($ins),true);
+} else if (substr($fn,-4) == ".bin"){
+  $in = array();
+  if (!file_exists($fn)) die("ERROR: File not found.\n");
+  $fo = str_replace(".bin",".koa",$fn);
+  $f = fopen($fn,"r");
+  $c = 0;
+  while ($ic = fread($f,2)){
+    $line =  str_pad($c, 3, "0", STR_PAD_LEFT);
+    $in[$line]=array(ord($ic[0]),ord($ic[1]));
+    $c++;
+  }
+  fclose($f);
+
+} else  die("ERROR: Filename does neither end with .json nor .bin \n");
 
 ksort($in);
 
