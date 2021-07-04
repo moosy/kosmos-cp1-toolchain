@@ -77,6 +77,7 @@ if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] [-o] [-s] [-r] filename.koa\n
   "          -d show description\n".
   "          -i show inline numerics\n".
   "          -o create filename.json\n".
+  "          -b create filename.bin (binary format for emulators)\n".
   "          -s create filename.json and start transfer to CP1\n".
   "          -r rewrite (beautify) input file\n");
 
@@ -84,6 +85,7 @@ $beauty = "STANDARD";
 $showdesc = false;
 $showcode = false;
 $output = false;
+$boutput = false;
 $rewrite = false;
 $send = false;
 
@@ -93,6 +95,7 @@ while ($carg = array_shift($argv)){
   if ($carg == "-i") $beauty = "INLINE"; else
   if ($carg == "-d") $showdesc = true; else
   if ($carg == "-c") $showcode = true; else
+  if ($carg == "-b") $boutput = true; else
   if ($carg == "-o") $output = true; else
   if ($carg == "-s") {
     $output = true;
@@ -105,6 +108,7 @@ while ($carg = array_shift($argv)){
 if (substr($fn,-4) != ".koa") die("ERROR: Filename does not end with .koa\n");
 
 $fo = str_replace(".koa",".json",$fn);
+$fb = str_replace(".koa",".bin",$fn);
 
 if (!file_exists($fn)) die("ERROR: File not found.\n");
 
@@ -249,5 +253,15 @@ if ($output){
   fclose($f);
   fwrite(STDERR,"Output file $fo written.\n");
   if ($send) passthru("/usr/local/bin/kosmos_send.py $fo");
+}
+
+if ($boutput){
+  $f = fopen($fb,"w"); 
+  foreach ($out as $v){
+    fwrite($f,chr($v[0]));
+    fwrite($f,chr($v[1]));
+  }
+  fclose($f);
+  fwrite(STDERR,"Binary output file $fb written.\n");
 }
 
