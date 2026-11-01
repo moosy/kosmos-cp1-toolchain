@@ -19,7 +19,7 @@ if fn[-5:] != ".json":
   print("ERROR: File does not end in .json");
   sys.exit(1)
 
-btn = Button(26, True);
+btn = Button(26, pull_up=True);
 
 def milli_time():
     return int(round(time.time() * 100000))

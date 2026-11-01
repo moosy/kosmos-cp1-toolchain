@@ -14,6 +14,8 @@ kosmos_recv.py filename.json
 A python script that can transfer the contents of the CP1 memory to a JSON file.
 It is designed to run on a Raspberry Pi, where one GPIO pin (I use GPIO 26) has to 
 be connected to pin 8 on port 1 of the CP1.
+The Python scripts use gpiozero and work with both gpiozero 1.x and 2.x
+(gpiozero 2.0, shipped with Raspberry Pi OS bookworm and trixie, only accepts keyword arguments).
 
 Beware: The CP1 is a 5V device, therefore the voltage to the Raspberry Pi must be limited!
 It turns out a simple Zener diode with a resistor does the job:

@@ -46,7 +46,7 @@ for i in range(128,256):     # Cell 255 - 128
   data.append(indata[str(383-i).zfill(3)][0])
 
 
-led = LED(26, True, True);
+led = LED(26, active_high=True, initial_value=True);
 
 t = [ [ time_base * 2, time_base] , [ time_base , time_base * 2 ] ]
 
