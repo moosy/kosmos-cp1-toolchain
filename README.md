@@ -55,6 +55,39 @@ Mine works fine with 15; a value of 33 is the original speed.
 
 
 
+Fast cassette: --schnell
+------------------------
+
+```
+kosmos_recv.py --schnell filename.json
+kosmos_send.py --schnell filename.json [--von N] [--bis M]
+```
+
+Needs the CP1 running the "schnell" firmware (own code in 0x800-0xFFF, see the
+EA adapter project: 8049 with EA = high, AT28C64B, A11 wired to P23). With it, the
+whole memory (256 cells) is transferred in about 6-8 seconds instead of 7 minutes.
+
+On the CP1:
+- CAS short: send all cells (000-127 or 000-255 with expansion), ascending.
+- CAS held for 1 s: the display shows `C Fr ___`; type the first cell, CAS, then `C to ___`,
+  type the last cell, CAS. Only this range is sent. CLR clears the input, STP aborts.
+- CAL: wait for data (rotating dashes), then `C rc nnn`. Only the cells contained in the
+  transfer are overwritten, so you can e.g. load a subroutine library into cells 200-255.
+- At the end the display shows `rdY`, or `C Su Err` on a checksum/format error.
+
+Received partial ranges are saved as JSON with only these cells. `kosmos_send.py --schnell`
+sends all cells of the file (they must be contiguous) or the range given by --von/--bis.
+Press CAL on the CP1 first, then confirm on the Pi.
+
+Sending re-runs itself with `sudo` to get real-time priority: on a Pi Zero, pulses
+otherwise get up to 0.5 ms too long (measured), which breaks the 0.4/1.2 ms encoding.
+
+Line protocol: idle high; one bit = low pulse, 0.4 ms = 1, 1.2 ms = 0, followed by at least
+0.4 ms high (2 ms after each byte); LSB first. Frame: $C1, first cell, last cell, per cell
+command + argument, CRC-8 (polynomial $07, init 0) over everything before.
+
+
+
 kosmos_json_show.py filename.json
 ---------------------------------
 

@@ -5,6 +5,10 @@ from time import sleep
 import json
 import sys
 
+if "--schnell" in sys.argv:  # schnelle Kassette (CP1-Firmware ab 0x800), siehe kosmos_schnell.py
+    import kosmos_schnell
+    sys.exit(kosmos_schnell.main(["send"] + [a for a in sys.argv[1:] if a != "--schnell"]))
+
 time_base = 15  # ms, bit is 3x as long
 
 if len(sys.argv) < 2:

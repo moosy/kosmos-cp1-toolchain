@@ -6,6 +6,10 @@ import time
 import json
 import sys
 
+if "--schnell" in sys.argv:  # schnelle Kassette (CP1-Firmware ab 0x800), siehe kosmos_schnell.py
+    import kosmos_schnell
+    sys.exit(kosmos_schnell.main(["recv"] + [a for a in sys.argv[1:] if a != "--schnell"]))
+
 
 up = '\033[F'
 
