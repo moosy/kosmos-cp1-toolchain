@@ -39,7 +39,8 @@ $cmd = array(
   21 => "SIU",
   22 => "P3E",
   23 => "P4A",
-  24 => "P5A"
+  24 => "P5A",
+  25 => "ODR"   # nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
 );
 
 $cmddesc = array(
@@ -57,8 +58,8 @@ $cmddesc = array(
   11 => "Wenn ja, springe zu Adresse %s",
   12 => "Prüfen, ob Akku größer als Inhalt von Zelle %s ist",
   13 => "Prüfen, ob Akku kleiner als Inhalt von Zelle %s ist",
-  14 => "Akku-Inhalt negieren (nur 0 oder 1)",
-  15 => "UND-Verknüpfung Akku und Zelle %s (nur 0 oder 1)",
+  14 => "Akku-Inhalt bitweise mit %s verXORen (000 wie 001: 0 und 1 tauschen; Original: nur 0/1)",
+  15 => "UND-Verknüpfung Akku und Zelle %s (bitweise; Original: nur 0 oder 1)",
   16 => "Klemme %s von Port 1 in Akku lesen (000 = alle)",
   17 => "Akku-Inhalt an Klemme %s von Port 1 legen (000 = alle)",
   18 => "Akku-Inhalt an Klemme %s von Port 2 legen (000 = alle)",
@@ -67,10 +68,11 @@ $cmddesc = array(
   21 => "Springe zur Adresse, die in Zelle %s steht",
   22 => "Klemme %s von Port 3 in Akku lesen (000 = alle)",
   23 => "Akku-Inhalt an Klemme %s von Port 4 legen (000 = alle)",
-  24 => "Akku-Inhalt an Klemme %s von Port 5 legen (000 = alle)"
+  24 => "Akku-Inhalt an Klemme %s von Port 5 legen (000 = alle)",
+  25 => "ODER-Verknüpfung Akku und Zelle %s (bitweise, nur Firmware schnell)"
 );
 
-$noarg = array("HLT","ANZ","NEG");
+$noarg = array("HLT","ANZ");
 
 if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] [-o] [-s] [-r] filename.koa\n".
   "Options:  -c show code\n".
