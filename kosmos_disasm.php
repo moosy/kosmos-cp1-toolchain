@@ -40,12 +40,13 @@ $cmd = array(
   22 => "P3E",
   23 => "P4A",
   24 => "P5A",
-  25 => "ODR",  # 25–30 nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
+  25 => "ODR",  # 25–31 nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
   26 => "OVF",
   27 => "SEG",
   28 => "AS1",
   29 => "AS2",
-  30 => "AS3"
+  30 => "AS3",
+  31 => "TST"
 );
 
 $cmddesc = array(
@@ -79,7 +80,8 @@ $cmddesc = array(
   27 => "Zellen %s bis +5 als Segmentmuster anzeigen (255 = Anzeige löschen; nur Firmware schnell)",
   28 => "Hunderter des Akkus als Segmentmuster in Zelle %s (nur Firmware schnell)",
   29 => "Zehner des Akkus als Segmentmuster in Zelle %s (nur Firmware schnell)",
-  30 => "Einer des Akkus als Segmentmuster in Zelle %s (nur Firmware schnell)"
+  30 => "Einer des Akkus als Segmentmuster in Zelle %s (nur Firmware schnell)",
+  31 => "Auf Zifferntaste warten, Ziffer 0..9 in den Akku (%s; nur Firmware schnell)"
 );
 
 $noarg = array("HLT");
