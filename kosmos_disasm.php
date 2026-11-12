@@ -40,13 +40,15 @@ $cmd = array(
   22 => "P3E",
   23 => "P4A",
   24 => "P5A",
-  25 => "ODR",  # 25–31 nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
+  25 => "ODR",  # 25–33 nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
   26 => "OVF",
   27 => "SEG",
   28 => "AS1",
   29 => "AS2",
   30 => "AS3",
-  31 => "TST"
+  31 => "TST",
+  32 => "JSR",
+  33 => "RET"
 );
 
 $cmddesc = array(
@@ -81,11 +83,13 @@ $cmddesc = array(
   28 => "Hunderter des Akkus als Segmentmuster in Zelle %s (nur Firmware schnell)",
   29 => "Zehner des Akkus als Segmentmuster in Zelle %s (nur Firmware schnell)",
   30 => "Einer des Akkus als Segmentmuster in Zelle %s (nur Firmware schnell)",
-  31 => "Auf Zifferntaste warten, Ziffer 0..9 in den Akku (%s; nur Firmware schnell)"
+  31 => "Auf Zifferntaste warten, Ziffer 0..9 in den Akku (%s; nur Firmware schnell)",
+  32 => "Unterprogramm ab Adresse %s aufrufen (nur Firmware schnell)",
+  33 => "Rücksprung aus dem Unterprogramm (nur Firmware schnell)"
 );
 
-$noarg = array("HLT");
-$jmparg = array("SPU","SPB");
+$noarg = array("HLT","RET");
+$jmparg = array("SPU","SPB","JSR");
 $valarg = array("LDA","ABS","ADD","SUB","VGL","VGR","VKL","UND","ODR","AS1","AS2","AS3","LIA","AIS","SIU");
 $adrarg = array("LIA","AIS","SIU");
 
