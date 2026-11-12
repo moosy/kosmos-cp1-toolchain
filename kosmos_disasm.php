@@ -40,8 +40,9 @@ $cmd = array(
   22 => "P3E",
   23 => "P4A",
   24 => "P5A",
-  25 => "ODR",  # 25/26 nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
-  26 => "OVF"
+  25 => "ODR",  # 25–27 nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
+  26 => "OVF",
+  27 => "SEG"
 );
 
 $cmddesc = array(
@@ -71,7 +72,8 @@ $cmddesc = array(
   23 => "Akku-Inhalt an Klemme %s von Port 4 legen (000 = alle)",
   24 => "Akku-Inhalt an Klemme %s von Port 5 legen (000 = alle)",
   25 => "ODER-Verknüpfung Akku und Zelle %s (bitweise, nur Firmware schnell)",
-  26 => "Überlauf-Fehler F-006 %s (000 = aus: 255 + 1 = 0, sonst an; nur Firmware schnell)"
+  26 => "Überlauf-Fehler F-006 %s (000 = aus: 255 + 1 = 0, sonst an; nur Firmware schnell)",
+  27 => "Zellen %s bis +5 als Segmentmuster anzeigen (255 = Anzeige löschen; nur Firmware schnell)"
 );
 
 $noarg = array("HLT");
