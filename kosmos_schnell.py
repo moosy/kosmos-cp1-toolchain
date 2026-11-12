@@ -215,7 +215,7 @@ def main(argv):
         daten = rahmen_bauen(zellen, von, bis)
         print(f'{fn}: Zellen {daten[1]:03d}–{daten[2]:03d}, {len(daten)} Byte, ca. '
               f'{sum(l + h for l, h in pulsplan(daten)) / 1e6:.1f} s')
-        input('Am CP1 CAL drücken (Anzeige: kreisende Striche), dann hier Enter … ')
+        input('Am CP1 CAL drücken (Anzeige: ⊔ = Eimer offen nach oben), dann hier Enter … ')
         ist = senden(daten)
         k = [d for d, (l, _) in zip(ist, pulsplan(daten)) if l == KURZ_US]
         g = [d for d, (l, _) in zip(ist, pulsplan(daten)) if l == LANG_US]
