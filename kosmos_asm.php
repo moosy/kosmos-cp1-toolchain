@@ -40,13 +40,14 @@ $cmd = array(
   22 => "P3E",
   23 => "P4A",
   24 => "P5A",
-  25 => "ODR"   # nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
+  25 => "ODR",  # 25/26 nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
+  26 => "OVF"
 );
 
 $cmddesc = array(
   0 => "Datenwert %s",
   1 => "Halt",
-  2 => "Akku-Inhalt anzeigen",
+  2 => "Akku-Inhalt anzeigen (001 = mit Vorzeichen, nur Firmware schnell)",
   3 => "Verzögern um %s ms",
   4 => "Konstante %s in den Akku laden",
   5 => "Inhalt von Zelle %s in den Akku laden",
@@ -69,10 +70,11 @@ $cmddesc = array(
   22 => "Klemme %s von Port 3 in Akku lesen (000 = alle)",
   23 => "Akku-Inhalt an Klemme %s von Port 4 legen (000 = alle)",
   24 => "Akku-Inhalt an Klemme %s von Port 5 legen (000 = alle)",
-  25 => "ODER-Verknüpfung Akku und Zelle %s (bitweise, nur Firmware schnell)"
+  25 => "ODER-Verknüpfung Akku und Zelle %s (bitweise, nur Firmware schnell)",
+  26 => "Überlauf-Fehler F-006 %s (000 = aus: 255 + 1 = 0, sonst an; nur Firmware schnell)"
 );
 
-$noarg = array("HLT","ANZ");
+$noarg = array("HLT");
 
 if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] [-o] [-s] [-r] filename.koa\n".
   "Options:  -c show code\n".
