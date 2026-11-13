@@ -158,7 +158,7 @@ foreach ($in as $line => $c){
       $labels[$c2p] = "label_";
     }
 
-    if (in_array($co,$valarg) && !array_key_exists($c2p,$values)){
+    if ((in_array($co,$valarg) || ($co == "SEG" && $c2 != 255)) && !array_key_exists($c2p,$values)){
       $values[$c2p] = "wert_";
     }
 
@@ -209,7 +209,7 @@ foreach ($in as $line => $c){
       $has_label = $labels[$c2p];
     }
 
-    if (in_array($co,$valarg) && isset($values[$c2p])){
+    if ((in_array($co,$valarg) || ($co == "SEG" && $c2 != 255)) && isset($values[$c2p])){
       $has_label = $values[$c2p];
     }
      
