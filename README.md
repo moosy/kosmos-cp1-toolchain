@@ -6,6 +6,8 @@ See https://de.wikipedia.org/wiki/Kosmos_CP1 for details.
 A comprehensive collection of documentation can be found at 
 http://www.8bit-homecomputermuseum.at/computer/kosmos_computer_praxis_cp1.html.
 
+Quick reference (German, 3 pages A4, firmware 4.02 with all extensions): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
+
 This toolchain consists of the following tools:
 
 kosmos_recv.py filename.json
