@@ -68,12 +68,13 @@ EA adapter project: 8049 with EA = high, AT28C64B, A11 wired to P23). With it, t
 whole memory (256 cells) is transferred in about 6-8 seconds instead of 7 minutes.
 
 On the CP1:
-- CAS short: send all cells (000-127 or 000-255 with expansion), ascending.
-- CAS held for 1 s: the display shows `C Fr ___`; type the first cell, CAS, then `C to ___`,
-  type the last cell, CAS. Only this range is sent. CLR clears the input, STP aborts.
-- CAL: wait for data (rotating dashes), then `C rc nnn`. Only the cells contained in the
+- CAS: the bucket symbol ⊓ appears at once. Released: send all cells (000-127 or 000-255
+  with expansion). Held: `_ __ ___` builds up on the right, after 1 s the display shows
+  `⊓ Fr ___`; type the first cell, CAS, then `⊓ to ___`, type the last cell, CAS. Only this
+  range is sent. CLR clears the input, STP aborts.
+- CAL: the open bucket ⊔ appears and the CP1 waits for data. Only the cells contained in the
   transfer are overwritten, so you can e.g. load a subroutine library into cells 200-255.
-- At the end the display shows `rdY`, or `C Su Err` on a checksum/format error.
+- At the end the display shows `rdY`, or `⊓ Su Err` / `⊔ Su Err` on a checksum/format error.
 
 Received partial ranges are saved as JSON with only these cells. `kosmos_send.py --schnell`
 sends all cells of the file (they must be contiguous) or the range given by --von/--bis.
@@ -85,6 +86,50 @@ otherwise get up to 0.5 ms too long (measured), which breaks the 0.4/1.2 ms enco
 Line protocol: idle high; one bit = low pulse, 0.4 ms = 1, 1.2 ms = 0, followed by at least
 0.4 ms high (2 ms after each byte); LSB first. Frame: $C1, first cell, last cell, per cell
 command + argument, CRC-8 (polynomial $07, init 0) over everything before.
+
+
+
+Remote control: kosmos_remote.py
+--------------------------------
+
+```
+kosmos_remote.py serve [--port 8049]     web page + API (keeps GPIO 26)
+kosmos_remote.py anzeige                 print the display
+kosmos_remote.py taste 0 0 0 pc run      press keys (name[:ms], e.g. cas:1500)
+kosmos_remote.py laden file.json         press CAL and send
+kosmos_remote.py speichern file.json [--von N --bis M]   press CAS and receive
+```
+
+Needs the "schnell" firmware 3.05 or later. On the CP1, hold **RUN for 1 s**: the display shows
+`rc on` (again: `rc oFF`). RUN pressed shortly still starts the program (on release). The
+firmware shows its version (`3.05`) for one second at power-on.
+
+Then the Pi can press keys and read the display, accumulator, PC and status at any time,
+also while a program is running. The web page (http://bastelpi:8049/) shows the live display,
+a keyboard like the CP1's (keys are held as long as you hold them, so CAS 1 s works), loads
+assembler source or JSON (it presses CAL itself) and fetches memory (it presses CAS itself).
+If a program drives terminal 8 of port 1 low permanently, the CP1 switches remote control off.
+
+The timing is done by `kosmos_rc` (C, built with `gcc -O2 -o kosmos_rc kosmos_rc.c`), which
+drives and samples the GPIO registers through /dev/gpiomem; Python on a Pi Zero is too slow for
+the short reply pulses. It needs real-time priority: run the server as a systemd service with
+`AmbientCapabilities=CAP_SYS_NICE` (user in group gpio). While the server runs, it owns
+GPIO 26: use `kosmos_remote.py laden/speichern` or the web page instead of `--schnell`.
+
+Protocol on the same line (P1.7, both sides only pull low):
+- Pi knocks by pulling the line low. The CP1's timer interrupt (every 2.56 ms) only counts the
+  ticks it sees low, it does not wait.
+- 3.5 ms low (1-2 ticks) = status request: the CP1 sends internal RAM 0x20..0x3A (display, key
+  buffer, accumulator, PC, status), one byte per interrupt, so the display keeps multiplexing.
+- 8.5 ms low (3 ticks) = command: the CP1 blanks the display, waits for the release and reads
+  4 bytes: bit = low pulse 150 µs = 1 / 750 µs = 0, 150 µs high, LSB first;
+  byte 4 = b1 ^ b2 ^ b3 ^ $A5.
+  - `01 zm dd` hold key: z = keyboard row (2..6), m = column mask, dd = frames of 15.36 ms
+  - `02 aa nn` read nn bytes of internal RAM from aa
+- Reply, one byte per interrupt: data, then check byte (XOR ^ $A5); low pulse ~43 µs = 1 /
+  ~125 µs = 0, ~43 µs high. `01` is acknowledged with the check byte only.
+- Key codes of the firmware: digit d = d + 1, OUT 11, INP 12, CAL 13, STEP 14, STP 15, RUN 16,
+  CAS 17, CLR 18, PC 19, ACC 20; row = (code + 7) / 4, bit = (code + 7) % 4.
 
 
 

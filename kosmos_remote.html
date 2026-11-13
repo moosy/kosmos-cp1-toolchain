@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos CP1 Fernsteuerung</title>
+<style>
+  :root {
+    --gehaeuse: #3b4541; --gehaeuse-dunkel: #2b3330; --feld: #1c2220;
+    --taste: #f3efe4; --taste-rand: #c9c3b2; --taste-text: #151515;
+    --led-an: #ff2a3d; --led-aus: #3a1115; --anzeige: #170608;
+    --text: #e9ece8; --grau: #9aa59f; --gut: #6fd08c; --schlecht: #ff8a7a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #202624; color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 18px; font-weight: 650; margin: 0 0 14px; letter-spacing: .02em; }
+  h1 small { color: var(--grau); font-weight: 400; }
+  .geraet { background: linear-gradient(180deg, var(--gehaeuse), var(--gehaeuse-dunkel));
+            border-radius: 14px; padding: 22px 20px 24px; box-shadow: 0 10px 30px #0008, inset 0 1px 0 #ffffff14; }
+  .oben { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  .anzeige { background: var(--anzeige); border-radius: 6px; padding: 14px 16px; box-shadow: inset 0 2px 8px #000c; }
+  .anzeige svg { display: block; width: min(420px, 82vw); height: auto; }
+  .info { display: grid; grid-template-columns: auto auto; gap: 2px 12px; font-variant-numeric: tabular-nums; color: var(--grau); }
+  .info b { color: var(--text); font-weight: 600; }
+  .status { margin-top: 6px; font-size: 13px; }
+  .status.gut { color: var(--gut); } .status.schlecht { color: var(--schlecht); }
+  .feld { margin-top: 20px; background: var(--feld); border-radius: 10px; padding: 16px; }
+  .reihe { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .reihe:last-child { margin-bottom: 0; }
+  .reihe.ziffern button { width: 52px; height: 52px; border-radius: 50%; font-size: 22px; }
+  button.t { background: var(--taste); color: var(--taste-text); border: 0; border-bottom: 3px solid var(--taste-rand);
+             border-radius: 9px; min-width: 104px; height: 50px; font: 800 19px/1 system-ui, sans-serif; cursor: pointer;
+             display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+             touch-action: none; user-select: none; -webkit-user-select: none; }
+  button.t small { font-size: 9.5px; font-weight: 500; color: #555; }
+  button.t:active, button.t.gedrueckt { transform: translateY(2px); border-bottom-width: 1px; background: #fff; }
+  button.t:focus-visible { outline: 3px solid #7fb8ff; outline-offset: 2px; }
+  .einzug1 { padding-left: 40px; } .einzug2 { padding-left: 70px; }
+  .hinweis { color: var(--grau); font-size: 13px; margin: 10px 2px 0; }
+  .panele { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+  @media (max-width: 720px) { .panele { grid-template-columns: 1fr; } .einzug1, .einzug2 { padding-left: 0; } }
+  .panel { background: #2a312e; border-radius: 10px; padding: 14px 16px; }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+  .panel label { color: var(--grau); font-size: 13px; }
+  textarea, input[type=number] { width: 100%; background: #171c1a; color: var(--text); border: 1px solid #3d4642;
+             border-radius: 6px; padding: 8px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+  textarea { min-height: 150px; resize: vertical; }
+  input[type=number] { width: 80px; }
+  .knoepfe { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  button.b { background: #4d6b5c; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; font-weight: 600; cursor: pointer; }
+  button.b.zweit { background: #3d4642; }
+  button.b:disabled { opacity: .5; cursor: progress; }
+  pre { background: #171c1a; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; font-size: 12.5px; margin: 10px 0 0; }
+  .meldung { font-size: 13px; margin-top: 8px; min-height: 1.4em; }
+  .klein { font-size: 12px; color: var(--grau); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kosmos CP1 <small>· Fernsteuerung über den bastelpi</small></h1>
+
+  <section class="geraet">
+    <div class="oben">
+      <div class="anzeige" aria-label="Anzeige"><svg id="anz" viewBox="0 0 430 92" role="img"></svg></div>
+      <div>
+        <div class="info">
+          <span>Akku</span><b id="akku">–</b>
+          <span>PC</span><b id="pc">–</b>
+        </div>
+        <div id="status" class="status">verbinde …</div>
+        <label class="klein"><input type="checkbox" id="live" checked> Anzeige live</label>
+      </div>
+    </div>
+
+    <div class="feld" id="tastatur">
+      <div class="reihe ziffern" id="ziffern"></div>
+      <div class="reihe einzug1">
+        <button class="t" data-k="step">STEP<small>Schritt</small></button>
+        <button class="t" data-k="stp">STP<small>Stopp</small></button>
+        <button class="t" data-k="run">RUN<small>Lauf</small></button>
+        <button class="t" data-k="cal">CAL<small>Cass lesen</small></button>
+      </div>
+      <div class="reihe einzug2">
+        <button class="t" data-k="clr">CLR<small>Irrtum</small></button>
+        <button class="t" data-k="acc">ACC<small>Akku</small></button>
+        <button class="t" data-k="cas">CAS<small>Cass speichern</small></button>
+      </div>
+      <div class="reihe einzug2">
+        <button class="t" data-k="pc">PC<small>Programmzähler</small></button>
+        <button class="t" data-k="out">OUT<small>auslesen</small></button>
+        <button class="t" data-k="inp">INP<small>eingeben</small></button>
+      </div>
+      <p class="hinweis">Tasten so lange halten wie am Gerät (CAS 1 s = Bereich). Tastatur: Ziffern, Enter = INP, P = PC, R = RUN, S = STP, Leertaste = STEP, C = CLR, A = ACC, O = OUT.</p>
+    </div>
+  </section>
+
+  <div class="panele">
+    <section class="panel">
+      <h2>Programm laden (CAL)</h2>
+      <label for="quelle">Quelltext für den Assembler, oder eine .json-Datei wählen</label>
+      <textarea id="quelle" spellcheck="false" placeholder="AKO 123&#10;ANZ&#10;HLT"></textarea>
+      <div class="knoepfe">
+        <button class="b" id="ladenQ">Assemblieren und laden</button>
+        <label class="b zweit" style="cursor:pointer">JSON laden …<input type="file" id="datei" accept=".json" hidden></label>
+      </div>
+      <div class="meldung" id="ladenM"></div>
+    </section>
+    <section class="panel">
+      <h2>Speicher holen (CAS)</h2>
+      <div class="knoepfe">
+        <button class="b" id="holenAlles">Alles</button>
+        <span class="klein">oder Zellen</span>
+        <input type="number" id="von" min="0" max="255" value="0" aria-label="von">
+        <span class="klein">bis</span>
+        <input type="number" id="bis" min="0" max="255" value="127" aria-label="bis">
+        <button class="b zweit" id="holenTeil">Bereich</button>
+      </div>
+      <div class="meldung" id="holenM"></div>
+      <pre id="listing" hidden></pre>
+      <div class="knoepfe"><button class="b zweit" id="download" hidden>Als JSON sichern</button></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+
+// ---- 7-Segment-Anzeige, Gruppen 8 88 888
+const X = [10, 92, 154, 250, 312, 374];
+function stelle(svg, x) {
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('transform', `translate(${x},8) skewX(-6)`);
+  const L = 30, D = 6;
+  const seg = {
+    a: [D, 0, L, D], g: [D, L + D, L, D], d: [D, 2 * L + 2 * D, L, D],
+    f: [0, D, D, L], b: [L + D, D, D, L], e: [0, L + 2 * D, D, L], c: [L + D, L + 2 * D, D, L]
+  };
+  const els = {};
+  for (const [k, [sx, sy, w, h]] of Object.entries(seg)) {
+    const r = document.createElementNS(NS, 'rect');
+    Object.entries({ x: sx + .8, y: sy + .8, width: w - 1.6, height: h - 1.6, rx: 2.5 }).forEach(([a, v]) => r.setAttribute(a, v));
+    g.appendChild(r); els[k] = r;
+  }
+  const p = document.createElementNS(NS, 'circle');
+  p.setAttribute('cx', L + 2 * D + 5); p.setAttribute('cy', 2 * L + 2.5 * D); p.setAttribute('r', 3.6);
+  g.appendChild(p); els.p = p;
+  svg.appendChild(g);
+  return els;
+}
+const anz = $('#anz');
+const stellen = X.map(x => stelle(anz, x));
+function zeige(seg) {
+  const bits = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'p'];
+  seg.forEach((v, i) => bits.forEach((k, b) =>
+    stellen[i][k].setAttribute('fill', v >> b & 1 ? 'var(--led-an)' : 'var(--led-aus)')));
+}
+zeige([0, 0, 0, 0, 0, 0]);
+
+// ---- Schnittstelle
+let beschaeftigt = 0;
+async function api(pfad, obj) {
+  const r = await fetch(pfad, obj ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) } : {});
+  const j = await r.json().catch(() => ({ fehler: 'keine Antwort vom Server' }));
+  if (!r.ok) throw new Error(j.fehler || r.statusText);
+  return j;
+}
+function status(text, gut) { const s = $('#status'); s.textContent = text; s.className = 'status ' + (gut ? 'gut' : 'schlecht'); }
+
+let runde = 0;
+async function abfragen() {
+  if (beschaeftigt) return;
+  try {
+    const a = await api('/api/anzeige' + (runde++ % 3 ? '' : '?mehr=1'));
+    zeige(a.seg);
+    if (a.akku !== undefined) {
+      const lsb = a.akku & 255;
+      $('#akku').textContent = String(a.akku >> 8).padStart(2, '0') + '.' + String(lsb).padStart(3, '0') + (lsb > 127 ? ` (${lsb - 256})` : '');
+      $('#pc').textContent = String(a.pc).padStart(3, '0');
+    }
+    status('verbunden · „' + a.text + '“', true);
+  } catch (e) {
+    status(e.message, false);
+  }
+}
+async function schleife() {
+  if ($('#live').checked) await abfragen();
+  setTimeout(schleife, 1000);
+}
+schleife();
+
+// ---- Tasten (Dauer = wie lange gedrückt)
+const z = $('#ziffern');
+for (const d of '0123456789') { const b = document.createElement('button'); b.className = 't'; b.dataset.k = d; b.textContent = d; z.appendChild(b); }
+let warteschlange = Promise.resolve();
+function senden(k, ms) {
+  warteschlange = warteschlange.then(async () => {
+    beschaeftigt++;
+    try { await api('/api/taste', { tasten: [`${k}:${Math.max(80, Math.min(3900, Math.round(ms)))}`] }); }
+    catch (e) { status(e.message, false); }
+    finally { beschaeftigt--; }
+    abfragen();
+  });
+}
+document.querySelectorAll('button.t').forEach(b => {
+  let t0 = 0;
+  b.addEventListener('pointerdown', e => { t0 = performance.now(); b.setPointerCapture(e.pointerId); b.classList.add('gedrueckt'); });
+  b.addEventListener('pointerup', () => { if (!t0) return; b.classList.remove('gedrueckt'); senden(b.dataset.k, performance.now() - t0); t0 = 0; });
+  b.addEventListener('pointercancel', () => { b.classList.remove('gedrueckt'); t0 = 0; });
+  b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); } });
+});
+const KEYS = { Enter: 'inp', p: 'pc', r: 'run', s: 'stp', ' ': 'step', c: 'clr', a: 'acc', o: 'out' };
+const gedrueckt = {};
+document.addEventListener('keydown', e => {
+  if (e.target.matches('textarea, input')) return;
+  const k = /^[0-9]$/.test(e.key) ? e.key : KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (!k) return;
+  e.preventDefault();
+  if (!gedrueckt[k]) { gedrueckt[k] = performance.now(); document.querySelector(`button[data-k="${k}"]`)?.classList.add('gedrueckt'); }
+});
+document.addEventListener('keyup', e => {
+  const k = /^[0-9]$/.test(e.key) ? e.key : KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (!k || !gedrueckt[k]) return;
+  document.querySelector(`button[data-k="${k}"]`)?.classList.remove('gedrueckt');
+  senden(k, performance.now() - gedrueckt[k]); delete gedrueckt[k];
+});
+
+// ---- Laden / Holen
+async function lange(knopf, meldung, f) {
+  knopf.disabled = true; beschaeftigt++; meldung.textContent = '… läuft';
+  try { meldung.textContent = await f(); meldung.style.color = 'var(--gut)'; }
+  catch (e) { meldung.textContent = e.message; meldung.style.color = 'var(--schlecht)'; }
+  finally { knopf.disabled = false; beschaeftigt--; abfragen(); }
+}
+$('#ladenQ').onclick = () => lange($('#ladenQ'), $('#ladenM'), async () => {
+  const r = await api('/api/laden', { quelltext: $('#quelle').value });
+  return `geladen: Zellen ${String(r.von).padStart(3, '0')}–${String(r.bis).padStart(3, '0')} (${r.bytes} Byte)`;
+});
+$('#datei').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  lange($('#ladenQ'), $('#ladenM'), async () => {
+    const zellen = JSON.parse(await f.text());
+    const r = await api('/api/laden', { zellen });
+    e.target.value = '';
+    return `${f.name}: Zellen ${String(r.von).padStart(3, '0')}–${String(r.bis).padStart(3, '0')} geladen`;
+  });
+};
+let geholt = null;
+function holen(knopf, obj) {
+  lange(knopf, $('#holenM'), async () => {
+    const r = await api('/api/speichern', obj);
+    geholt = r.zellen;
+    const l = $('#listing'); l.textContent = r.listing || JSON.stringify(r.zellen); l.hidden = false;
+    $('#download').hidden = false;
+    const k = Object.keys(r.zellen);
+    return `Zellen ${k[0]}–${k[k.length - 1]} geholt, Prüfsumme ok`;
+  });
+}
+$('#holenAlles').onclick = () => holen($('#holenAlles'), {});
+$('#holenTeil').onclick = () => holen($('#holenTeil'), { von: +$('#von').value, bis: +$('#bis').value });
+$('#download').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(geholt)], { type: 'application/json' }));
+  a.download = 'cp1-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json'; a.click();
+};
+</script>
+</body>
+</html>
