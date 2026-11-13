@@ -105,7 +105,7 @@ class Leitung:
         self.lg = lgpio
         self.h = lgpio.gpiochip_open(0)
         self.kanten = []
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()     # laden/speichern halten die Leitung über mehrere Schritte
         self._eingang()
         rc = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'kosmos_rc')
         self.rc = subprocess.Popen([rc], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
@@ -283,6 +283,10 @@ class Leitung:
 
     def auftrag(self, job, werte=None, frist_s=8):
         """Parameter schreiben, zuletzt F_JOB, dann CAL drücken und warten, bis F_JOB wieder 0 ist."""
+        with self.lock:
+            return self._auftrag(job, werte, frist_s)
+
+    def _auftrag(self, job, werte, frist_s):
         for adr, w in (werte or {}).items():
             self.schreib(adr, w)
         self.schreib(F_JOB, job)
@@ -344,16 +348,36 @@ class Leitung:
         self.auftrag(0x08, {F_BANK: bank}, frist_s=10)
 
     # ------------------------------------------------ Kassette aus der Ferne
-    def laden(self, zellen, von=None, bis=None):
+    def laden(self, zellen, von=None, bis=None, versuche=3):
+        """CAL drücken, senden, auf rdY prüfen. Die Leitung bleibt dabei die ganze Zeit belegt: eine
+        Statusabfrage (3,5 ms low) zwischen CAL und den Daten hält der CP1 für ein kaputtes erstes Bit (Su Err)."""
         daten = ks.rahmen_bauen(zellen, von, bis)
-        self.taste('cal')
-        time.sleep(0.3)
         with self.lock:
-            ist = self._pulse(ks.pulsplan(daten), schlaf_ok=True)
-        return {'von': daten[1], 'bis': daten[2], 'bytes': len(daten),
-                'kurz': [round(min(ist)), round(max(i for i in ist if i < 800))]}
+            for v in range(versuche):
+                self.taste('cal')
+                time.sleep(0.3)
+                ist = self._pulse(ks.pulsplan(daten), schlaf_ok=True)
+                ende = time.monotonic() + 2
+                anz = b''
+                while time.monotonic() < ende:
+                    time.sleep(0.1)
+                    try:
+                        anz = self.status()[0:6]
+                    except KeineAntwort:
+                        continue
+                    if anz[3:6] == bytes([0x50, 0x5e, 0x6e]) or anz[1:3] == bytes([0x6d, 0x1c]):
+                        break                       # rdY bzw. Su (Err)
+                if anz[3:6] == bytes([0x50, 0x5e, 0x6e]):
+                    return {'von': daten[1], 'bis': daten[2], 'bytes': len(daten), 'versuch': v + 1,
+                            'kurz': [round(min(ist)), round(max(i for i in ist if i < 800))]}
+                time.sleep(0.3)
+            raise KeineAntwort(f'CP1 meldet nach {versuche} Versuchen kein rdY („{segtext(anz)}“)')
 
     def speichern(self, von=None, bis=None, warte_s=40):
+        with self.lock:                             # keine Statusabfrage zwischen CAS und den Daten
+            return self._speichern(von, bis, warte_s)
+
+    def _speichern(self, von, bis, warte_s):
         if von is None:
             self.taste('cas')
         else:
