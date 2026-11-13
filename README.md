@@ -181,6 +181,8 @@ New commands (firmware 4.01), parameters on the JSR/PSH stack:
 - `37 FRD xxx` pop count (0 = 256), first cell in the bank, bank; read these cells into memory from xxx
 - `38 FWR xxx` the same in the other direction (bank 0 -> F-003)
 - missing stack values -> F-009, no flash -> F-010
+- `39 TSE 000` (firmware 4.02): accumulator = digit pressed since the last TSE, else 255; does not wait.
+  VZG now remembers digit keys pressed while it waits, so a game loop with VZG + TSE never misses a key.
 
 ```
 PSK 5      ; bank
