@@ -53,7 +53,8 @@ $cmd = array(
   35 => "POP",
   36 => "PSK",  # 36–38 nur mit Firmware 4.0 (SPI-Flash)
   37 => "FRD",
-  38 => "FWR"
+  38 => "FWR",
+  39 => "TSE"   # ab Firmware 4.02
 );
 
 $cmddesc = array(
@@ -95,7 +96,8 @@ $cmddesc = array(
   35 => "Obersten Stapelwert in den Akku holen (nur Firmware schnell)",
   36 => "Konstante %s auf den Stapel legen (nur Firmware 4.0)",
   37 => "Flash lesen: Bank, Adresse, Anzahl vom Stapel, ins RAM ab Zelle %s (nur Firmware 4.0)",
-  38 => "Flash schreiben: Bank, Adresse, Anzahl vom Stapel, aus dem RAM ab Zelle %s (nur Firmware 4.0)"
+  38 => "Flash schreiben: Bank, Adresse, Anzahl vom Stapel, aus dem RAM ab Zelle %s (nur Firmware 4.0)",
+  39 => "Zifferntaste seit dem letzten TSE in den Akku, sonst 255; wartet nicht (%s; nur Firmware 4.02)"
 );
 
 $noarg = array("HLT","RET","PSH","POP");
