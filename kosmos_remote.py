@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fernsteuerung für den Kosmos CP1 (Firmware „schnell“, EEPROM-Bank JP3 = 1) über GPIO 26 <-> P1.7.
+"""Fernsteuerung für den Kosmos CP1 (Firmware ab 3.05, Flash ab 4.01) über GPIO 26 <-> P1.7.
 
 Am CP1 einmal RUN 1 s halten -> „rc on“. Dann:
 
@@ -8,6 +8,10 @@ Am CP1 einmal RUN 1 s halten -> „rc on“. Dann:
   kosmos_remote.py taste 0 0 0 pc run        Tasten drücken (Name[:ms], z. B. cas:1500)
   kosmos_remote.py laden datei.json          CAL drücken und senden
   kosmos_remote.py speichern datei.json [--von N --bis M]   CAS drücken und empfangen
+  kosmos_remote.py flash                     Flash-Verzeichnis (Bank, Start, Name, Autoboot)
+  kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   RAM des CP1 nach Bank 12
+  kosmos_remote.py flash-laden 12            Bank 12 ins RAM, PC = Start
+  kosmos_remote.py autoboot 12               beim Einschalten Bank 12 starten (0 = aus)
 
 Läuft der Server, gehen die übrigen Befehle über ihn (http://localhost:PORT), sonst direkt.
 
@@ -17,6 +21,11 @@ Status). 8,5 ms = Befehl: der CP1 wartet aufs Loslassen; nach 300 µs kommen 4 B
 150 µs high, LSB zuerst; Byte 4 = B1 ^ B2 ^ B3 ^ $A5. (Bit 1 = 150 µs, Bit 0 = 750 µs, Schwelle 460 µs.)
   01 zm dd   Taste: z = Tastaturzeile (2..6), m = Spaltenmaske, dd = Dauer in Bildern à 15,36 ms
   02 aa nn   nn Byte internes RAM ab aa lesen
+  03 aa ww   internes RAM aa = ww (ab 4.01; Quittung wie 01)
+Flash (4.01): Parameter mit 03 ablegen (F_BANK 0x2C, F_SEKT 0x2D, F_OFH/F_OFL 0x2E/0x2F, Name 0x60..0x6F),
+zuletzt F_JOB (0x26), dann CAL drücken; fertig, wenn F_JOB wieder 0 ist. Aufträge: $01 16 Byte roh lesen,
+$81 RAM mit Name speichern (Start = PC), $04 laden, $08 Autoboot, $10 nächste belegte Bank ab F_BANK suchen.
+Geht nur, wenn der CP1 auf Tasten wartet (kein Programm läuft).
 Antwort nach 2,6 ms, JE INTERRUPT EIN BYTE (die Anzeige des CP1 läuft dabei weiter): die Daten,
 dann ein Prüfbyte (XOR ^ $A5); Pulse ~43 µs = 1 / ~125 µs = 0. Auf 01 kommt nur $A5 als Quittung.
 Senden und Messen macht das C-Hilfsprogramm kosmos_rc direkt an den GPIO-Registern (Python ist dafür
@@ -70,6 +79,18 @@ def segtext(seg):
     for b in seg:
         out += SEG.get(b & 0x7f, '?') + ('.' if b & 0x80 else '')
     return out
+
+
+F_JOB, F_BANK, F_SEKT, F_OFH, F_OFL, F_NAME = 0x26, 0x2c, 0x2d, 0x2e, 0x2f, 0x60
+
+
+def name_text(b):
+    if all(x == 0xFF for x in b): return ''
+    return bytes(x if 32 <= x < 127 else 63 for x in b).decode('ascii').rstrip()
+
+
+class FlashFehler(Exception):
+    pass
 
 
 class KeineAntwort(Exception):
@@ -250,6 +271,78 @@ class Leitung:
             name, _, ms = t.partition(':')
             self.taste(name, int(ms) if ms else 100)
 
+    # ------------------------------------------------ Flash (Firmware 4.01)
+    def schreib(self, adr, wert):
+        """Befehl 03: ein Byte ins interne RAM des CP1 (Quittung = nur Prüfbyte)"""
+        for v in range(VERSUCHE):
+            try:
+                self.befehl(3, adr, wert); return
+            except KeineAntwort:
+                if v == VERSUCHE - 1: raise
+                time.sleep(0.02)
+
+    def auftrag(self, job, werte=None, frist_s=8):
+        """Parameter schreiben, zuletzt F_JOB, dann CAL drücken und warten, bis F_JOB wieder 0 ist."""
+        for adr, w in (werte or {}).items():
+            self.schreib(adr, w)
+        self.schreib(F_JOB, job)
+        self.taste('cal')
+        ende = time.monotonic() + frist_s
+        while time.monotonic() < ende:
+            time.sleep(0.15)
+            try:
+                if self.ram(F_JOB, 1)[0] == 0: break
+            except KeineAntwort:
+                pass
+        else:
+            self.schreib(F_JOB, 0)
+            raise FlashFehler('der CP1 hat den Auftrag nicht angenommen – läuft gerade ein Programm? (erst STP)')
+        text = self.anzeige()['text']
+        if text.startswith('F'):
+            nr = int(text[-3:]) if text[-3:].isdigit() else 0
+            raise FlashFehler({10: 'F-010: kein Flash gefunden', 11: 'F-011: Bank ist leer',
+                               3: 'F-003: Bank/Bereich ungültig', 1: 'F-001'}.get(nr, f'Fehler {text}'))
+
+    def flash_lies(self, bank, sektor, ofs):
+        """16 Byte roh aus dem Flash"""
+        self.auftrag(0x01, {F_BANK: bank, F_SEKT: sektor, F_OFH: ofs >> 8, F_OFL: ofs & 0xFF})
+        return self.ram(F_NAME, 16)
+
+    def flash_verzeichnis(self):
+        """-> {'autoboot': n, 'baenke': [{'bank', 'name', 'start'}]}"""
+        gefunden, b = [], 0
+        while b <= 255:
+            self.auftrag(0x10, {F_BANK: b})
+            bank, sektor = self.ram(F_BANK, 2)
+            if sektor & 0x80: break
+            gefunden.append((bank, sektor, name_text(self.ram(F_NAME, 16))))
+            if bank == 255: break
+            b = bank + 1
+        verz = {}
+        if gefunden and gefunden[0][0] == 0:
+            s0 = gefunden[0][1]
+            for bank, _, _ in gefunden:
+                stueck = (2 * bank) & ~15
+                if stueck not in verz:
+                    verz[stueck] = self.flash_lies(0, s0, stueck)
+        def zelle(n):
+            st = (2 * n) & ~15
+            return verz[st][(2 * n) - st: (2 * n) - st + 2] if st in verz else b'\0\0'
+        return {'autoboot': zelle(0)[1] if verz else 0,
+                'baenke': [{'bank': bank, 'name': name, 'start': zelle(bank)[1]} for bank, _, name in gefunden if bank]}
+
+    def flash_speichern(self, bank, name='', start=None):
+        werte = {F_NAME + i: c for i, c in enumerate(name.encode('latin-1', 'replace')[:16].ljust(16, b' '))}
+        if start is not None: werte[0x38] = start          # PC = Startadresse
+        werte[F_BANK] = bank
+        self.auftrag(0x81, werte, frist_s=10)
+
+    def flash_laden(self, bank):
+        self.auftrag(0x04, {F_BANK: bank})
+
+    def flash_autoboot(self, bank):
+        self.auftrag(0x08, {F_BANK: bank}, frist_s=10)
+
     # ------------------------------------------------ Kassette aus der Ferne
     def laden(self, zellen, von=None, bis=None):
         daten = ks.rahmen_bauen(zellen, von, bis)
@@ -337,8 +430,10 @@ def serve(port):
                     return self.antwort(200, seite, 'text/html')
                 if pfad == '/api/anzeige':
                     return self.antwort(200, leitung.anzeige())
+                if pfad == '/api/flash':
+                    return self.antwort(200, leitung.flash_verzeichnis())
                 return self.antwort(404, {'fehler': 'unbekannt'})
-            except KeineAntwort as e:
+            except (KeineAntwort, FlashFehler) as e:
                 return self.antwort(503, {'fehler': str(e)})
 
         def do_POST(self):
@@ -362,10 +457,22 @@ def serve(port):
                     z = leitung.speichern(req.get('von'), req.get('bis'))
                     return self.antwort(200, {'zellen': {f'{k:03d}': list(v) for k, v in sorted(z.items())},
                                               'listing': disasm(z)})
+                if self.path == '/api/flash/speichern':
+                    b = int(req['bank'])
+                    if not 1 <= b <= 255: raise ValueError('Bank 1..255')
+                    st = req.get('start')
+                    leitung.flash_speichern(b, req.get('name', ''), None if st in (None, '') else int(st) & 255)
+                    return self.antwort(200, {'ok': True})
+                if self.path == '/api/flash/laden':
+                    leitung.flash_laden(int(req['bank']))
+                    return self.antwort(200, {'ok': True})
+                if self.path == '/api/flash/autoboot':
+                    leitung.flash_autoboot(int(req['bank']) & 255)
+                    return self.antwort(200, {'ok': True})
                 if self.path == '/api/ram':
                     return self.antwort(200, {'daten': list(leitung.ram(int(req['adr']), int(req['n'])))})
                 return self.antwort(404, {'fehler': 'unbekannt'})
-            except KeineAntwort as e:
+            except (KeineAntwort, FlashFehler) as e:
                 return self.antwort(503, {'fehler': str(e)})
             except (ValueError, KeyError) as e:
                 return self.antwort(400, {'fehler': str(e)})
@@ -427,6 +534,29 @@ def main(argv):
             z = Leitung().speichern(von, bis)
         ks.json_schreiben(rest[0], z)
         print(f'{rest[0]}: Zellen {min(z):03d}–{max(z):03d} gespeichert.'); return 0
+    if cmd.startswith('flash') or cmd == 'autoboot':
+        zahl = lambda i: int(rest[i])
+        if cmd == 'flash':
+            v = ueber_server('/api/flash', port=port) if srv else Leitung().flash_verzeichnis()
+            print(f"Autoboot: {v['autoboot'] or 'aus'}")
+            for e in v['baenke']:
+                print(f"  {e['bank']:03d}  Start {e['start']:03d}  {e['name']}")
+            return 0
+        if cmd == 'flash-speichern':
+            st = int(rest[rest.index('--start') + 1]) if '--start' in rest else None
+            name = next((a for a in rest[1:] if not a.isdigit() and a != '--start'), '')
+            obj = {'bank': zahl(0), 'name': name, 'start': st}
+            if srv: ueber_server('/api/flash/speichern', obj, port=port)
+            else: Leitung().flash_speichern(obj['bank'], name, st)
+            print(f"Bank {obj['bank']:03d} gespeichert"); return 0
+        if cmd == 'flash-laden':
+            if srv: ueber_server('/api/flash/laden', {'bank': zahl(0)}, port=port)
+            else: Leitung().flash_laden(zahl(0))
+            print(f'Bank {zahl(0):03d} geladen'); return 0
+        if cmd == 'autoboot':
+            if srv: ueber_server('/api/flash/autoboot', {'bank': zahl(0)}, port=port)
+            else: Leitung().flash_autoboot(zahl(0))
+            print('Autoboot', f'Bank {zahl(0):03d}' if zahl(0) else 'aus'); return 0
     print(__doc__); return 1
 
 
@@ -435,3 +565,10 @@ if __name__ == '__main__':
         sys.exit(main(sys.argv[1:]))
     except KeineAntwort as e:
         print('Keine Antwort vom CP1:', e); sys.exit(2)
+    except FlashFehler as e:
+        print('Flash:', e); sys.exit(3)
+    except Exception as e:                      # Fehler vom Server (HTTP 503 mit Text)
+        import urllib.error
+        if isinstance(e, urllib.error.HTTPError):
+            print('Fehler:', json.loads(e.read() or b'{}').get('fehler', e)); sys.exit(2)
+        raise

@@ -40,7 +40,7 @@ $cmd = array(
   22 => "P3E",
   23 => "P4A",
   24 => "P5A",
-  25 => "ODR",  # 25–35 nur mit Firmware „schnell“ (EEPROM-Bank JP3 = 1)
+  25 => "ODR",  # 25–35 nur mit Firmware „schnell“ (ab 3.0)
   26 => "OVF",
   27 => "SEG",
   28 => "AS1",
@@ -50,7 +50,10 @@ $cmd = array(
   32 => "JSR",
   33 => "RET",
   34 => "PSH",
-  35 => "POP"
+  35 => "POP",
+  36 => "PSK",  # 36–38 nur mit Firmware 4.0 (SPI-Flash)
+  37 => "FRD",
+  38 => "FWR"
 );
 
 $cmddesc = array(
@@ -89,12 +92,15 @@ $cmddesc = array(
   32 => "Unterprogramm ab Adresse %s aufrufen (nur Firmware schnell)",
   33 => "Rücksprung aus dem Unterprogramm (nur Firmware schnell)",
   34 => "Akku auf den Stapel legen (nur Firmware schnell)",
-  35 => "Obersten Stapelwert in den Akku holen (nur Firmware schnell)"
+  35 => "Obersten Stapelwert in den Akku holen (nur Firmware schnell)",
+  36 => "Konstante %s auf den Stapel legen (nur Firmware 4.0)",
+  37 => "Flash lesen: Bank, Adresse, Anzahl vom Stapel, ins RAM ab Zelle %s (nur Firmware 4.0)",
+  38 => "Flash schreiben: Bank, Adresse, Anzahl vom Stapel, aus dem RAM ab Zelle %s (nur Firmware 4.0)"
 );
 
 $noarg = array("HLT","RET","PSH","POP");
 $jmparg = array("SPU","SPB","JSR");
-$valarg = array("LDA","ABS","ADD","SUB","VGL","VGR","VKL","UND","ODR","AS1","AS2","AS3","LIA","AIS","SIU");
+$valarg = array("LDA","ABS","ADD","SUB","VGL","VGR","VKL","UND","ODR","AS1","AS2","AS3","LIA","AIS","SIU","FRD","FWR");
 $adrarg = array("LIA","AIS","SIU");
 
 

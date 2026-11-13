@@ -44,7 +44,7 @@
   .panel { background: #2a312e; border-radius: 10px; padding: 14px 16px; }
   .panel h2 { font-size: 15px; margin: 0 0 10px; }
   .panel label { color: var(--grau); font-size: 13px; }
-  textarea, input[type=number] { width: 100%; background: #171c1a; color: var(--text); border: 1px solid #3d4642;
+  textarea, input[type=number], input[type=text] { width: 100%; background: #171c1a; color: var(--text); border: 1px solid #3d4642;
              border-radius: 6px; padding: 8px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
   textarea { min-height: 150px; resize: vertical; }
   input[type=number] { width: 80px; }
@@ -55,6 +55,15 @@
   pre { background: #171c1a; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; font-size: 12.5px; margin: 10px 0 0; }
   .meldung { font-size: 13px; margin-top: 8px; min-height: 1.4em; }
   .klein { font-size: 12px; color: var(--grau); }
+  input[type=text] { width: 190px; }
+  .panel.breit { grid-column: 1 / -1; }
+  table.verz { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; font-size: 14px; }
+  table.verz th { text-align: left; color: var(--grau); font-weight: 500; font-size: 12.5px; padding: 4px 6px; border-bottom: 1px solid #3d4642; }
+  table.verz td { padding: 5px 6px; border-bottom: 1px solid #333b38; }
+  table.verz td.knopf { text-align: right; white-space: nowrap; }
+  table.verz button.b { padding: 4px 9px; font-size: 13px; }
+  .stern { color: #ffd479; }
+  @media (max-width: 520px) { table.verz td.start, table.verz th.start { display: none; } }
 </style>
 </head>
 <body>
@@ -120,6 +129,27 @@
       <div class="meldung" id="holenM"></div>
       <pre id="listing" hidden></pre>
       <div class="knoepfe"><button class="b zweit" id="download" hidden>Als JSON sichern</button></div>
+    </section>
+    <section class="panel breit">
+      <h2>Flash <span class="klein">· Firmware 4.01, nur wenn kein Programm läuft</span></h2>
+      <div class="knoepfe">
+        <button class="b" id="verzLesen">Verzeichnis lesen</button>
+        <span class="klein" id="autoInfo"></span>
+        <button class="b zweit" id="autoAus" hidden>Autoboot aus</button>
+      </div>
+      <table class="verz" id="verz" hidden>
+        <thead><tr><th>Bank</th><th>Name</th><th class="start">Start</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="knoepfe" style="margin-top:14px">
+        <span class="klein">RAM speichern in Bank</span>
+        <input type="number" id="fBank" min="1" max="255" value="1" aria-label="Bank">
+        <input type="text" id="fName" maxlength="16" placeholder="Name (16 Zeichen)" aria-label="Name">
+        <span class="klein">Start</span>
+        <input type="number" id="fStart" min="0" max="255" placeholder="PC" aria-label="Startadresse">
+        <button class="b" id="fSpeichern">Speichern</button>
+      </div>
+      <div class="meldung" id="flashM"></div>
     </section>
   </div>
 </main>
@@ -264,6 +294,52 @@ $('#download').onclick = () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(geholt)], { type: 'application/json' }));
   a.download = 'cp1-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json'; a.click();
+};
+// ---- Flash
+const drei = n => String(n).padStart(3, '0');
+let verzeichnis = null;
+function zeigeVerz(v) {
+  verzeichnis = v;
+  const tb = $('#verz tbody'); tb.textContent = '';
+  for (const e of v.baenke) {
+    const tr = document.createElement('tr');
+    const auto = v.autoboot === e.bank;
+    tr.innerHTML = `<td>${drei(e.bank)}${auto ? ' <span class="stern" title="Autoboot">★</span>' : ''}</td><td></td>` +
+      `<td class="start">${drei(e.start)}</td><td class="knopf"><button class="b" data-a="laden">Laden</button> ` +
+      `<button class="b zweit" data-a="auto"${auto ? ' disabled' : ''}>Autoboot</button></td>`;
+    tr.children[1].textContent = e.name || '–';
+    tr.querySelector('[data-a=laden]').onclick = ev => flashTat(ev.target, '/api/flash/laden', { bank: e.bank },
+      `Bank ${drei(e.bank)} geladen, PC = ${drei(e.start)} · RUN startet`, false);
+    tr.querySelector('[data-a=auto]').onclick = ev => flashTat(ev.target, '/api/flash/autoboot', { bank: e.bank },
+      `Autoboot: Bank ${drei(e.bank)}`, true);
+    tb.appendChild(tr);
+  }
+  $('#verz').hidden = !v.baenke.length;
+  $('#autoInfo').textContent = v.baenke.length ? (v.autoboot ? `Autoboot: Bank ${drei(v.autoboot)}` : 'Autoboot aus')
+                                                 : 'Flash ist leer';
+  $('#autoAus').hidden = !v.autoboot;
+  const frei = [...Array(255).keys()].map(i => i + 1).find(b => !v.baenke.some(e => e.bank === b));
+  if (frei && !$('#fBank').dataset.angefasst) $('#fBank').value = frei;
+}
+function flashTat(knopf, pfad, obj, text, neuLesen) {
+  lange(knopf, $('#flashM'), async () => {
+    await api(pfad, obj);
+    if (neuLesen) zeigeVerz(await api('/api/flash'));
+    return text;
+  });
+}
+$('#fBank').oninput = () => { $('#fBank').dataset.angefasst = 1; };
+$('#verzLesen').onclick = () => lange($('#verzLesen'), $('#flashM'), async () => {
+  const v = await api('/api/flash'); zeigeVerz(v);
+  return `${v.baenke.length} belegte Bank${v.baenke.length === 1 ? '' : 'en'}`;
+});
+$('#autoAus').onclick = () => flashTat($('#autoAus'), '/api/flash/autoboot', { bank: 0 }, 'Autoboot aus', true);
+$('#fSpeichern').onclick = () => {
+  const bank = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
+  if (!(bank >= 1 && bank <= 255)) { $('#flashM').textContent = 'Bank 1..255'; return; }
+  if (verzeichnis?.baenke.some(e => e.bank === bank) && !confirm(`Bank ${drei(bank)} überschreiben?`)) return;
+  flashTat($('#fSpeichern'), '/api/flash/speichern', { bank, name, start: start === '' ? null : +start },
+    `RAM in Bank ${drei(bank)} gespeichert`, true);
 };
 </script>
 </body>

@@ -100,9 +100,9 @@ kosmos_remote.py laden file.json         press CAL and send
 kosmos_remote.py speichern file.json [--von N --bis M]   press CAS and receive
 ```
 
-Needs the "schnell" firmware 3.05 or later. On the CP1, hold **RUN for 1 s**: the display shows
+Needs the "schnell" firmware 3.05 or later (4.01 for the flash). On the CP1, hold **RUN for 1 s**: the display shows
 `rc on` (again: `rc oFF`). RUN pressed shortly still starts the program (on release). The
-firmware shows its version (`3.05`) for one second at power-on.
+firmware shows its version (e.g. `4.01`) for one second at power-on.
 
 Then the Pi can press keys and read the display, accumulator, PC and status at any time,
 also while a program is running. The web page (http://bastelpi:8049/) shows the live display,
@@ -126,10 +126,74 @@ Protocol on the same line (P1.7, both sides only pull low):
   byte 4 = b1 ^ b2 ^ b3 ^ $A5.
   - `01 zm dd` hold key: z = keyboard row (2..6), m = column mask, dd = frames of 15.36 ms
   - `02 aa nn` read nn bytes of internal RAM from aa
+  - `03 aa ww` write internal RAM aa = ww (firmware 4.01; acknowledged like `01`)
 - Reply, one byte per interrupt: data, then check byte (XOR ^ $A5); low pulse ~43 µs = 1 /
   ~125 µs = 0, ~43 µs high. `01` is acknowledged with the check byte only.
 - Key codes of the firmware: digit d = d + 1, OUT 11, INP 12, CAL 13, STEP 14, STP 15, RUN 16,
   CAS 17, CLR 18, PC 19, ACC 20; row = (code + 7) / 4, bit = (code + 7) % 4.
+
+
+
+SPI flash ("hard disk"): firmware 4.01
+--------------------------------------
+
+```
+kosmos_remote.py flash                         directory (bank, start, name, autoboot)
+kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   CP1 memory -> bank 12
+kosmos_remote.py flash-laden 12                bank 12 -> memory, PC = start
+kosmos_remote.py autoboot 12                   start bank 12 at power-on (0 = off)
+```
+
+The web page has the same functions in its "Flash" panel.
+
+Hardware: an IS25LP016D (2 MB, 3.3 V) on port 1 terminals 1-4: P1.0 = CS#, P1.1 = SCK,
+P1.2 = SI, P1.3 = SO. Supply from 5 V via 56 Ohm and a 3.3 V Zener diode (plus 10 µF and
+100 nF); CS#, SCK and SI through 4.7 kOhm each (the flash's clamp diodes take the excess, the
+Zener absorbs the current), SO through 1.5 kOhm to the 8049. WP# and HOLD# to 3.3 V.
+
+The firmware no longer fits into 4 KB, so it uses both halves of the AT28C64B: **A12 is
+driven by P1.4** (pin 31 of the 8049; on the adapter, cut the trace to terminal 5 and wire the
+CPU side to the middle pin of JP3, jumper removed). Both halves contain the same lower 2 KB
+(original code, interrupt, remote control); the upper 2 KB of half A (A12 = 1, EEPROM
+0x1000-0x1FFF, selected after reset) hold the existing extensions, those of half B (EEPROM
+0x0000-0x0FFF) the flash code. Switching happens in small stubs at the same address in both
+halves (`ANL/ORL P1,#$10`). `OUT P1A` keeps P1.0-P1.4 and P1.7 at 1, so programs can only use
+terminals 6 and 7 of port 1.
+
+Storage: 256 banks of 256 cells (512 bytes). Each bank uses two 4 KB sectors alternately:
+writing erases the free sector, copies the old contents over in 8-byte pieces, inserts the new
+cells and finally marks the sector valid (generation counter), so a power failure never loses
+the old version. Bank 0 is the directory: cell 0 = (00, autoboot bank), cell n = (00, start
+of bank n). Name (16 ASCII characters) and generation are stored behind the cells. Writing
+takes about 0.6 s, saving with directory entry about 1.3 s, reading 256 cells about 0.2 s.
+
+On the CP1 (always 3 digits):
+- `nnn CAS`: save memory to bank nnn, start = current PC (set it first with `xxx PC`).
+  Display `5to nnn`, then `5to rdY`.
+- `nnn CAL`: load bank nnn, PC = start (`LdA nnn`, then `P xxx`); RUN starts it.
+- `nnn` + hold CAL for 1 s: autoboot bank nnn (`bot rdY`), `000` = off. At power-on the CP1
+  shows `bot nnn` for 2 s (any key aborts), then loads and runs the bank.
+- Errors: F-010 no flash answers, F-011 bank empty, F-003 bank 0 / invalid range, F-001 not
+  3 digits.
+
+New commands (firmware 4.01), parameters on the JSR/PSH stack:
+- `36 PSK xxx` push the constant xxx
+- `37 FRD xxx` pop count (0 = 256), first cell in the bank, bank; read these cells into memory from xxx
+- `38 FWR xxx` the same in the other direction (bank 0 -> F-003)
+- missing stack values -> F-009, no flash -> F-010
+
+```
+PSK 5      ; bank
+PSK 123    ; first cell in the bank
+PSK 10     ; 10 cells
+FRD 80     ; -> memory 80..89
+```
+
+Remote jobs (used by the web page and the commands above): the Pi writes the parameters with
+`03` (F_BANK 0x2C, F_SEKT 0x2D, F_OFH/F_OFL 0x2E/0x2F, name 0x60-0x6F), F_JOB (0x26) last, then
+presses CAL; done when F_JOB is 0 again. Jobs: $01 read 16 raw bytes, $81 save memory with
+name, $04 load, $08 autoboot, $10 find the next used bank from F_BANK. They only run while the
+CP1 waits for keys (no program running).
 
 
 
