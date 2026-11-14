@@ -10,12 +10,12 @@ Quick reference (German, 3 pages A4, firmware 4.02 with all extensions; not yet 
 
 This toolchain consists of the following tools:
 
-Firmware 5.04 in short
+Firmware 5.05 in short
 ----------------------
 
 The CP1 runs an extended firmware (own code in the 8049's upper address range, two halves of
 an AT28C64B switched by P1.4, see "SPI flash" below). At power-on it shows its version
-(`5.04`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
+(`5.05`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
 flash, and the Raspberry Pi talks to the CP1 over port 1 terminals 7 and 8 at any time.
 
 Wiring to the Pi (both lines with the same protection; the Pi only ever pulls low):
@@ -172,7 +172,8 @@ writing erases the free sector, copies the old contents over in 8-byte pieces, i
 cells and finally marks the sector valid (generation counter), so a power failure never loses
 the old version. Bank 0 is the directory: cell 0 = (00, autoboot bank), cell n = (00, start
 of bank n). Name (16 ASCII characters) and generation are stored behind the cells.
-Firmware 5.03: 0x300-0x5FF of the sector hold the name table (per entry: length, cell, name in
+Firmware 5.03: 0x300-0x5FF of the sector hold the name table (5.05: the last 8 bytes, 0x5F8-0x5FD, are the
+bank's own 6-digit display for browsing) (per entry: length, cell, name in
 ASCII; FF = end; 768 bytes, about 70 names of 8 characters). Byte 0x212 = 00 marks a bank with
 names. Only then the copy runs up to 0x5FF (about 1.7 s longer), otherwise it stops at 0x217
 as before.
@@ -183,7 +184,10 @@ On the CP1 (always 3 digits; CLR clears the input, STP aborts):
 - CAS held 1 s: `Fr ___`, `to ___` (cells of memory), `bAn ___`, `d5t ___` (first cell in the
   bank), each confirmed with CAS. Only pressing CAS takes the default (whole memory, cell 0).
   The rest of the bank stays, the directory is not touched.
-- CAL short: `bAn ___`, nnn CAL: load bank nnn, PC = start (`P xxx`); RUN starts it.
+- CAL short (5.05): browse the used banks. Each shows `bAn nnn` for a moment, then its own 6-digit
+  display (set on the web page, field "Anzeige") or the first letters of its name. CAL again = next
+  bank (after the last one it starts again; that step takes ~1.6 s), hold CAL 1 s = load it (PC = start,
+  `P xxx`; RUN starts it), digits = the usual `bAn ___` input, STP = cancel.
 - CAL held 1 s: `bAn ___`, `Fr ___`, `to ___` (cells in the bank), `d5t ___` (cells of
   memory). PC stays, display `LdA rdY`.
 - RUN held 1 s: `bot ___`, nnn RUN: autoboot bank nnn (`bot rdY`), `000` = off. At power-on

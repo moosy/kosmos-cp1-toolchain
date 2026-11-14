@@ -357,8 +357,10 @@ class Leitung:
         -> {'zellen', 'name', 'namen'}; namen nur, wenn Byte 0x212 = 00 (5.03, Namensbereich ab 0x300)"""
         d = self.fni(0x25, 0, 0, bank=bank)
         meta = d[512:]
-        namen = namen_aus_bytes(meta[0x100:0x400]) if len(meta) >= 0x400 and meta[0x12] == 0 else {}
-        return {'zellen': self._zellen(d[:512], 0), 'name': name_text(meta[:16]), 'namen': namen}
+        mit = len(meta) >= 0x400 and meta[0x12] == 0
+        namen = namen_aus_bytes(meta[0x100:0x400]) if mit else {}
+        anzeige = anzeige_aus_bytes(meta[0x100:0x400]) if mit else None
+        return {'zellen': self._zellen(d[:512], 0), 'name': name_text(meta[:16]), 'namen': namen, 'anzeige': anzeige}
 
     def bank_sichern(self, bank, von=0, bis=255):
         """Bank direkt aus dem Flash; das RAM des CP1 bleibt unberührt. Ganze Bank: Komplettdump ($25) mit Name.
@@ -368,14 +370,14 @@ class Leitung:
             return k['zellen'], k['name']
         return self._zellen(self.fni(0x24, von, bis - von + 1, bank=bank), von), None
 
-    def bank_einspielen(self, bank, zellen, name=None, start=None, namen=None):
+    def bank_einspielen(self, bank, zellen, name=None, start=None, namen=None, anzeige=None):
         """Zellen direkt in eine Bank (FNI $22/$23); Rest der Bank bleibt; start != None -> Verzeichnis.
         namen (dict, auch leer) -> $29 (5.03): Namensbereich 0x300..0x5FF wird mitgeschrieben (Name dann Pflicht)"""
         if not 1 <= bank <= 255: raise ValueError('Bank 1..255')
         von, bis = min(zellen), max(zellen)
         daten = self._bytes(zellen, von, bis)
-        if namen is not None:
-            job, daten, name = 0x29, daten + namen_bytes(namen), (name or '')
+        if namen is not None or anzeige is not None:
+            job, daten, name = 0x29, daten + namen_bytes(namen or {}, anzeige), (name or '')
         else:
             job = 0x23 if name is not None else 0x22
         self.fni(job, von, bis - von + 1, bank=bank, daten=daten, start=255 if start is None else start, name=name)
@@ -398,19 +400,63 @@ def namen_lesen(text):
 NAMEN_PLATZ = 0x300                       # 5.03: Namensbereich 0x300..0x5FF jedes Bank-Sektors
 
 
-def namen_bytes(namen):
-    """{adresse: name} -> 768 Byte: je Eintrag Länge, Adresse, Name (ASCII); Rest FF (Länge FF = Ende)"""
+ANZEIGE_POS = 0x2F8                       # 5.05: eigene 6-stellige Anzeige der Bank bei 0x5F8..0x5FD
+
+
+def namen_bytes(namen, anzeige=None):
+    """{adresse: name} (+ 6 Segmentbytes Anzeige) -> 768 Byte: je Eintrag Länge, Adresse, Name (ASCII); FF = Ende;
+    die letzten 8 Byte: Anzeige (6 Byte, FF = keine) + FF FF"""
     out = bytearray()
     for a, n in sorted(namen.items()):
         b = n.encode('ascii')[:63]
-        if len(out) + 2 + len(b) > NAMEN_PLATZ - 1:
-            raise ValueError(f'Namensbereich voll ({NAMEN_PLATZ} Byte) – ab {a:03d}={n} passt nichts mehr')
+        if len(out) + 2 + len(b) > ANZEIGE_POS - 1:
+            raise ValueError(f'Namensbereich voll ({ANZEIGE_POS} Byte) – ab {a:03d}={n} passt nichts mehr')
         out += bytes([len(b), a & 0xFF]) + b
-    return bytes(out) + b'\xff' * (NAMEN_PLATZ - len(out))
+    out += b'\xff' * (ANZEIGE_POS - len(out))
+    anz = bytes(anzeige)[:6] if anzeige else b'\xff' * 6
+    return bytes(out) + anz.ljust(6, b'\x00') + b'\xff\xff'
+
+
+def anzeige_aus_bytes(d):
+    """-> 6 Segmentbytes der eigenen Anzeige oder None"""
+    a = bytes(d[ANZEIGE_POS:ANZEIGE_POS + 6])
+    return a if len(a) == 6 and a[0] != 0xFF else None
+
+
+# Zeichen -> 7 Segmente (wie asc_seg der Firmware, hier mit Klein-/Großbuchstaben, wo das Gerät sie kann)
+SEG_ZEICHEN = {' ': 0, '-': 0x40, '_': 0x08, '=': 0x48, '.': 0x80, ',': 0x80, '?': 0x53, "'": 0x20, '"': 0x22,
+               '(': 0x39, ')': 0x0f, '[': 0x39, ']': 0x0f, '/': 0x52, '\\': 0x64, '^': 0x23, '$': 0x6d,
+               '0': 0x3f, '1': 0x06, '2': 0x5b, '3': 0x4f, '4': 0x66, '5': 0x6d, '6': 0x7d, '7': 0x07, '8': 0x7f, '9': 0x6f,
+               'A': 0x77, 'B': 0x7c, 'C': 0x39, 'D': 0x5e, 'E': 0x79, 'F': 0x71, 'G': 0x3d, 'H': 0x76, 'I': 0x06,
+               'J': 0x1e, 'K': 0x75, 'L': 0x38, 'M': 0x37, 'N': 0x54, 'O': 0x3f, 'P': 0x73, 'Q': 0x67, 'R': 0x50,
+               'S': 0x6d, 'T': 0x78, 'U': 0x3e, 'V': 0x1c, 'W': 0x3e, 'X': 0x76, 'Y': 0x6e, 'Z': 0x5b,
+               'b': 0x7c, 'c': 0x58, 'd': 0x5e, 'h': 0x74, 'i': 0x04, 'n': 0x54, 'o': 0x5c, 'r': 0x50, 't': 0x78, 'u': 0x1c}
+
+
+def anzeige_aus_text(text, wie_firmware=False):
+    """Text -> 6 Segmentbytes; „.“ setzt den Punkt der Stelle davor. Unbekanntes: dunkel.
+    wie_firmware: so, wie asc_seg (5.05) einen Banknamen ohne eigene Anzeige zeigt (nur Großbuchstaben, O = o,
+    jedes Zeichen eine Stelle)"""
+    if wie_firmware:
+        return bytes(([0x5c if c == 'O' else 0x80 if c in '.,' else SEG_ZEICHEN.get(c, 0) for c in text.upper()] + [0] * 6)[:6])
+    out = []
+    for ch in text:
+        if ch == '.' and out and not out[-1] & 0x80:
+            out[-1] |= 0x80; continue
+        out.append(SEG_ZEICHEN.get(ch, SEG_ZEICHEN.get(ch.upper(), 0)))
+    return bytes((out + [0] * 6)[:6])
+
+
+def text_aus_anzeige(seg):
+    rueck = {}
+    for ch, v in sorted(SEG_ZEICHEN.items(), key=lambda kv: (not kv[0].isupper(), not kv[0].islower(), not kv[0].isdigit())):
+        rueck.setdefault(v, ch)                 # Buchstaben vor Ziffern vor Zeichen
+    return ''.join(rueck.get(b & 0x7F, '?') + ('.' if b & 0x80 else '') for b in seg)
 
 
 def namen_aus_bytes(d):
     namen, i = {}, 0
+    d = d[:ANZEIGE_POS]
     while i + 2 <= len(d) and 1 <= d[i] <= 63:
         n, a = d[i], d[i + 1]
         try:
@@ -529,6 +575,8 @@ def serve(port):
                     return self.antwort(200, {'quelltext': r['quelltext'], 'namen': namen_text(r['namen']),
                                               'zellen': {f'{k:03d}': list(v) for k, v in sorted(r['zellen'].items())},
                                               'bis': r['bis']})
+                if self.path == '/api/anzeige_vorschau':
+                    return self.antwort(200, {'seg': list(anzeige_aus_text(req.get('text', ''), bool(req.get('wie_firmware'))))})
                 if self.path == '/api/disasm':
                     z = {int(k): tuple(v) for k, v in req['zellen'].items()}
                     return self.antwort(200, {'listing': disasm(z, namen_lesen(req.get('namen', '')))})
@@ -572,15 +620,17 @@ def serve(port):
                     k = leitung.bank_komplett(b)
                     namen = k['namen'] or namen_lesen(req.get('namen', ''))     # Namen aus der Bank haben Vorrang
                     return self.antwort(200, {'bank': b, 'name': k['name'], 'namen': namen_text(namen), 'namen_aus_bank': bool(k['namen']),
+                                              'anzeige': text_aus_anzeige(k['anzeige']) if k['anzeige'] else '',
                                               'zellen': {f'{a:03d}': list(v) for a, v in k['zellen'].items()},
                                               'listing': disasm(k['zellen'], namen)})
                 if self.path == '/api/bank/einspielen':
                     z = {int(k): tuple(v) for k, v in req['zellen'].items()}
                     st = req.get('start')
-                    nm = req.get('namen')
+                    nm, an = req.get('namen'), (req.get('anzeige') or '').strip()
                     r = leitung.bank_einspielen(int(req['bank']), z, req.get('name') or None,
                                                 None if st in (None, '') else int(st) & 255,
-                                                None if nm is None else namen_lesen(nm))
+                                                None if nm is None else namen_lesen(nm),
+                                                anzeige_aus_text(an) if an else None)
                     return self.antwort(200, r)
                 return self.antwort(404, {'fehler': 'unbekannt'})
             except (KeineAntwort, FlashFehler) as e:

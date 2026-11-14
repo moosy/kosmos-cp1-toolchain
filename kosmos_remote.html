@@ -57,6 +57,8 @@
   .klein { font-size: 12px; color: var(--grau); }
   input[type=text] { width: 190px; }
   .panel.breit { grid-column: 1 / -1; }
+  .miniAnz { display: inline-block; background: var(--anzeige); border-radius: 4px; padding: 3px 5px; vertical-align: middle; }
+  .miniAnz svg { display: block; width: 110px; height: auto; }
   .editor { display: grid; grid-template-columns: 1fr 220px; gap: 12px; margin-top: 10px; }
   .editor textarea { min-height: 420px; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 4; }
   @media (max-width: 720px) { .editor { grid-template-columns: 1fr; } .editor textarea { min-height: 260px; } }
@@ -158,6 +160,10 @@
         <input type="text" id="fName" maxlength="16" placeholder="Name (16 Zeichen)" aria-label="Name">
         <span class="klein">Start</span>
         <input type="number" id="fStart" min="0" max="255" placeholder="PC" aria-label="Startadresse">
+        <span class="klein">Anzeige</span>
+        <input type="text" id="fAnz" maxlength="12" placeholder="aus dem Namen" aria-label="Anzeige beim Blättern (6 Stellen)" style="width:120px"
+               title="So erscheint die Bank beim Blättern mit CAL (6 Stellen, „.“ = Punkt). Leer: die ersten Buchstaben des Namens.">
+        <span class="miniAnz"><svg id="anzVorschau" viewBox="0 0 430 92" role="img" aria-label="Vorschau der Anzeige"></svg></span>
         <button class="b" id="fSpeichern" title="Inhalt des CP1-RAM in die Bank (Start leer = PC)">RAM speichern</button>
         <button class="b zweit" id="fEditor" title="Programm aus dem Editor assemblieren und mit den Namen direkt in die Bank schreiben, das RAM bleibt unberührt">Editor speichern</button>
       </div>
@@ -210,10 +216,22 @@ function stelle(svg, x) {
 }
 const anz = $('#anz');
 const stellen = X.map(x => stelle(anz, x));
-function zeige(seg) {
+function zeigeIn(st, seg) {
   const bits = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'p'];
   seg.forEach((v, i) => bits.forEach((k, b) =>
-    stellen[i][k].setAttribute('fill', v >> b & 1 ? 'var(--led-an)' : 'var(--led-aus)')));
+    st[i][k].setAttribute('fill', v >> b & 1 ? 'var(--led-an)' : 'var(--led-aus)')));
+}
+const zeige = seg => zeigeIn(stellen, seg);
+const vorschau = X.map(x => stelle($('#anzVorschau'), x));
+zeigeIn(vorschau, [0, 0, 0, 0, 0, 0]);
+let vorschauT = null;
+function anzVorschau() {
+  clearTimeout(vorschauT);
+  vorschauT = setTimeout(async () => {
+    const eigen = $('#fAnz').value.trim();
+    const obj = eigen ? { text: eigen } : { text: $('#fName').value, wie_firmware: true };   // leer: wie der CP1 den Namen zeigt
+    try { zeigeIn(vorschau, (await api('/api/anzeige_vorschau', obj)).seg); } catch (e) {}
+  }, 250);
 }
 zeige([0, 0, 0, 0, 0, 0]);
 
@@ -380,10 +398,11 @@ function zeigeVerz(v) {
     tr.querySelector('[data-a=laden]').onclick = ev => flashTat(ev.target, '/api/flash/laden', { bank: e.bank },
       `Bank ${drei(e.bank)} geladen, PC = ${drei(e.start)} · RUN startet`, false);
     tr.querySelector('[data-a=sichern]').onclick = ev => lange(ev.target, $('#flashM'), async () => {
-      const r = await api('/api/bank/sichern', { bank: e.bank, namen: nm.value });
-      if (r.namen_aus_bank) nm.value = r.namen;
+      const r = await api('/api/bank/sichern', { bank: e.bank, namen: '' });   // nur die Namen dieser Bank
+      nm.value = r.namen_aus_bank ? r.namen : '';
       insEditor(r.listing, `bank${drei(e.bank)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
       $('#fBank').value = e.bank; $('#fBank').dataset.angefasst = 1; $('#fName').value = (r.name || '').trim();
+      $('#fAnz').value = r.anzeige || ''; anzVorschau();
       return `Bank ${drei(e.bank)}${r.name ? ' „' + r.name.trim() + '“' : ''} im Editor (RAM unberührt)`;
     });
     tr.querySelector('[data-a=auto]').onclick = ev => flashTat(ev.target, '/api/flash/autoboot', { bank: e.bank },
@@ -405,6 +424,7 @@ function flashTat(knopf, pfad, obj, text, neuLesen) {
   });
 }
 $('#fBank').oninput = () => { $('#fBank').dataset.angefasst = 1; };
+$('#fAnz').oninput = $('#fName').oninput = anzVorschau;
 $('#verzLesen').onclick = () => lange($('#verzLesen'), $('#flashM'), async () => {
   const v = await api('/api/flash'); zeigeVerz(v);
   return `${v.baenke.length} belegte Bank${v.baenke.length === 1 ? '' : 'en'}`;
@@ -425,7 +445,7 @@ $('#fEditor').onclick = () => {
   lange($('#fEditor'), $('#flashM'), async () => {
     const a = await assemble();
     const st = start !== '' ? +start : (da ? null : 0);            // leer: bestehender Start bleibt, neue Bank 0
-    await api('/api/bank/einspielen', { bank, zellen: a.zellen, name: name || null, start: st, namen: a.namen });
+    await api('/api/bank/einspielen', { bank, zellen: a.zellen, name: name || null, start: st, namen: a.namen, anzeige: $('#fAnz').value });
     zeigeVerz(await api('/api/flash'));
     const n = a.namen.trim() ? a.namen.trim().split('\n').length : 0;
     return `Editor -> Bank ${drei(bank)} (alle 256 Zellen${n ? ', ' + n + ' Namen' : ''}, RAM unberührt)`;
