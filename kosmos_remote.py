@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Fernsteuerung für den Kosmos CP1, Firmware 5.01: GPIO 26 <-> P1.7 (Klemme 8), GPIO 19 <-> P1.6 (Klemme 7).
+"""Fernsteuerung für den Kosmos CP1, Firmware 5.02: GPIO 26 <-> P1.7 (Klemme 8), GPIO 19 <-> P1.6 (Klemme 7).
 
 Die Fernsteuerung ist immer an. Befehle:
 
   kosmos_remote.py serve [--port 8049]      Webseite + Schnittstelle (hält die Leitungen)
   kosmos_remote.py anzeige                   Anzeige als Text
   kosmos_remote.py taste 0 0 0 pc run        Tasten drücken (Name[:ms], z. B. cas:1500)
+  kosmos_remote.py reset                     Kaltstart wie Einschalten: alles RAM weg (Firmware 5.02)
   kosmos_remote.py laden datei.json          Zellen ins RAM des CP1 (FNI, ~1 s)
   kosmos_remote.py speichern datei.json [--von N --bis M]   RAM des CP1 in eine Datei (FNI)
   kosmos_remote.py zelle N [B A]             Zelle N lesen bzw. auf B.A setzen (auch bei laufendem Programm)
@@ -24,6 +25,7 @@ NIE (im Interrupt des CP1, unbemerkt): Anklopfen = Klemme 8 low. 3,5 ms = Status
   Byte 4 = B1 ^ B2 ^ B3 ^ $A5. Antwort je Interrupt-Takt ein Byte, Pulse ~50/~150 µs, dann Prüfbyte.
   01 zm dd Taste · 02 aa nn RAM lesen · 03 aa ww RAM schreiben · 04 jj 00 Auftrag starten (nur im Leerlauf)
   05/06 aa nn  nn Byte ab Byte aa der internen / CP3-8155 · 07/08 aa ww  Byte aa = ww  (Zelle z: Byte 2z, 2z+1)
+  09 00 00  Reset wie Einschalten (5.02, keine Antwort)
 FNI (Interrupt des CP1 aus, sichtbar „Q-Z“): getaktet über Klemme 7, Daten auf Klemme 8, Blöcke mit CRC.
   Aufträge: $20 Pi -> 8155, $21 8155 -> Pi, $22/$23 Pi -> Flash (mit Name), $24 Flash -> Pi,
   $25 Bank komplett -> Pi (Zellen + 18 Byte Bankkopf), $26 alle Namen -> Pi (Verzeichnis).
@@ -172,6 +174,21 @@ class Leitung:
                 t0 = time.monotonic()
         rest = bilder * BILD_MS / 1000 + 0.06 - (time.monotonic() - t0)   # gehalten + loslassen sehen
         if rest > 0: time.sleep(rest)
+
+    def reset(self):
+        """NIE 09 (Firmware 5.02): Kaltstart wie beim Einschalten, alles RAM weg, danach Version und Autoboot.
+        Geprüft an der Versionsanzeige („5.“ in Stelle 3); -> Anzeige-Text"""
+        with self.lock:
+            for v in range(VERSUCHE):
+                self._rc(rahmen(9, 0, 0).hex(), 0)
+                time.sleep(0.3)
+                try:
+                    a = self.anzeige()
+                except KeineAntwort:
+                    continue
+                if a['seg'][2] & 0x7F == 0x6D and a['seg'][1] == 0 and a['seg'][0] == 0:
+                    return a['text']
+            raise KeineAntwort('kein Reset erkannt – Firmware ab 5.02?')
 
     def tasten(self, folge):
         """folge: ['1', '2', 'pc', 'cas:1500']"""
@@ -441,6 +458,8 @@ def serve(port):
                 if self.path == '/api/flash/autoboot':
                     leitung.flash_autoboot(int(req['bank']) & 255)
                     return self.antwort(200, {'ok': True})
+                if self.path == '/api/reset':
+                    return self.antwort(200, {'text': leitung.reset()})
                 if self.path == '/api/ram':
                     return self.antwort(200, {'daten': list(leitung.ram(int(req['adr']), int(req['n'])))})
                 if self.path == '/api/zellen':
@@ -502,6 +521,9 @@ def main(argv):
     if cmd == 'anzeige':
         a = ueber_server('/api/anzeige', port=port) if srv else Leitung().anzeige()
         print(a['text']); return 0
+    if cmd == 'reset':
+        r = ueber_server('/api/reset', {}, port=port)['text'] if srv else Leitung().reset()
+        print('Reset:', r); return 0
     if cmd == 'taste':
         if srv: ueber_server('/api/taste', {'tasten': rest}, port=port)
         else: Leitung().tasten(rest)

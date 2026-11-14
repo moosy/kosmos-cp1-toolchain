@@ -82,6 +82,7 @@
         </div>
         <div id="status" class="status">verbinde …</div>
         <label class="klein"><input type="checkbox" id="live" checked> Anzeige live</label>
+        <button class="b zweit" id="resetK" title="Kaltstart wie beim Einschalten: Programm und alle Daten im CP1 werden gelöscht">Reset</button>
       </div>
     </div>
 
@@ -275,6 +276,14 @@ document.addEventListener('keyup', e => {
   document.querySelector(`button[data-k="${k}"]`)?.classList.remove('gedrueckt');
   senden(k, performance.now() - gedrueckt[k]); delete gedrueckt[k];
 });
+
+$('#resetK').onclick = async () => {
+  if (!confirm('CP1 zurücksetzen? Programm und alle Daten im Speicher werden gelöscht (wie Aus- und Einschalten, danach ggf. Autoboot).')) return;
+  const k = $('#resetK'); k.disabled = true; beschaeftigt++;
+  try { const r = await api('/api/reset', {}); status('Reset · „' + r.text + '“', true); }
+  catch (e) { status(e.message, false); }
+  finally { k.disabled = false; beschaeftigt--; }
+};
 
 // ---- Laden / Holen
 async function lange(knopf, meldung, f) {

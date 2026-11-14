@@ -10,12 +10,12 @@ Quick reference (German, 3 pages A4, firmware 4.02 with all extensions; not yet 
 
 This toolchain consists of the following tools:
 
-Firmware 5.01 in short
+Firmware 5.02 in short
 ----------------------
 
 The CP1 runs an extended firmware (own code in the 8049's upper address range, two halves of
 an AT28C64B switched by P1.4, see "SPI flash" below). At power-on it shows its version
-(`5.01`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
+(`5.02`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
 flash, and the Raspberry Pi talks to the CP1 over port 1 terminals 7 and 8 at any time.
 
 Wiring to the Pi (both lines with the same protection; the Pi only ever pulls low):
@@ -40,6 +40,11 @@ Two transfer modes:
   switches its interrupt off for about a second and shows the direction on the right three
   digits: `C-P` CP1 -> Pi, `P-C` Pi -> CP1, `F-P` flash -> Pi, `P-F` Pi -> flash, then `rdY`
   (or `Err`). FNI jobs only start while the CP1 waits for keys; otherwise they are refused.
+
+Reset (firmware 5.02): hold **CLR and press STP** on the CP1, or `kosmos_remote.py reset` / the
+"Reset" button on the web page (NIE command `09 00 00`). Works also while a program runs. Same as
+switching off and on: all memory is cleared (8049 RAM and both 8155), then version, `P 000` and
+autoboot if set.
 
 Decimal point (hardware mod): the DP segments of all digits are connected and driven by PA7
 of the 8155 (pin 28) through the former overvoltage BC238C. In normal operation the firmware
@@ -77,6 +82,7 @@ kosmos_remote.py taste 0 0 0 pc run      press keys (name[:ms], e.g. cas:1500)
 kosmos_remote.py laden file.json         file -> memory (FNI)
 kosmos_remote.py speichern file.json [--von N --bis M]   memory -> file (FNI)
 kosmos_remote.py zelle N [B A]           read cell N, or set it to B.A (NIE, also while a program runs)
+kosmos_remote.py reset                   cold start like power-on, all memory cleared (5.02)
 ```
 
 Remote control is always on. The web page (http://bastelpi:8049/) shows the live display,
@@ -102,6 +108,7 @@ NIE protocol (terminal 8 = P1.7, handled in the CP1's timer interrupt every 2.56
     acceptance is "terminal 7 goes low" instead.
   - `05 aa nn` / `06 aa nn` read nn bytes from byte address aa of the internal / CP3 8155,
     `07 aa ww` / `08 aa ww` write one byte (cell z = bytes 2z and 2z+1; CP3 = cells 128-255)
+  - `09 00 00` reset like power-on (5.02, no reply)
 - Key codes of the firmware: digit d = d + 1, OUT 11, INP 12, CAL 13, STEP 14, STP 15, RUN 16,
   CAS 17, CLR 18, PC 19, ACC 20; row = (code + 7) / 4, bit = (code + 7) % 4.
 
