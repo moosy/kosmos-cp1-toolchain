@@ -1,14 +1,19 @@
-/* kosmos_rc – Fernsteuerungs-Übertragung zum Kosmos CP1 direkt über die GPIO-Register (/dev/gpiomem).
+/* kosmos_rc – Übertragung zum Kosmos CP1 direkt über die GPIO-Register (/dev/gpiomem). Firmware 5.00.
  *
  * Läuft dauerhaft neben kosmos_remote.py (Pipe): je Zeile auf stdin ein Auftrag
- *     <rahmen-hex oder -> <bits>
- *   "-"      = nur anklopfen, 3,5 ms (Statusabfrage, der CP1 hält dafür nicht an)
- *   rahmen   = 8,5 ms anklopfen, dann 4 Byte senden (je Bit Low 150 µs = 1 / 750 µs = 0, danach 150 µs high)
- *   bits     = so viele Low-Pulse der Antwort messen
- * Antwort auf stdout:  OK <low_us> <low_us> ...   bzw.  TIMEOUT <low_us> ...
+ *   NIE (Fernsteuerung im Interrupt des CP1):   <rahmen-hex oder -> <bits>
+ *     "-"      = nur anklopfen, 3,5 ms (Statusabfrage, der CP1 hält dafür nicht an)
+ *     rahmen   = 8,5 ms anklopfen, dann 4 Byte senden (je Bit Low 50 µs = 1 / 150 µs = 0, danach 50 µs high)
+ *     bits     = so viele Low-Pulse der Antwort messen
+ *     Antwort:  OK <low_us> <low_us> ...   bzw.  TIMEOUT <low_us> ...
+ *   FNI (CP1 mit abgeschaltetem Interrupt, getaktet):   F <E|A|K|N> <anf> <anz> <kopf-hex> [<daten-hex>]
+ *     E = Pi sendet (Pi -> 8155 / Flash), A = Pi empfängt; anf/anz = Zellen (anz 0 = 256), kopf = 4 Byte
+ *     K = Bank komplett empfangen: 256 Zellen + Bankkopf 18 Byte (Blöcke 8/8/2)
+ *     N = alle Namen: je Bank Blöcke 8/8/2 = Bank, 0, Name 16; Ende = 8-Byte-Block mit Bank 0
+ *     Antwort:  OK [<daten-hex>]   bzw.  FEHLER <grund>
  *
- * Leitung: GPIO 26 (BCM2835, Pi Zero). Low = Ausgang mit 0, sonst Eingang (der CP1 und der
- * Pullup ziehen hoch) – beide Seiten ziehen nur nach low.
+ * Leitungen (Pi Zero, BCM-Nummern): D = GPIO 26 (Pin 37, Klemme 8 = P1.7), T = GPIO 19 (Pin 35, Klemme 7 = P1.6).
+ * Low = Ausgang mit 0, sonst Eingang (CP1 und Pullup ziehen hoch) – beide Seiten ziehen nur nach low.
  * Echtzeit (SCHED_FIFO) braucht CAP_SYS_NICE (kommt vom systemd-Dienst).
  *
  * gcc -O2 -o kosmos_rc kosmos_rc.c
@@ -24,13 +29,19 @@
 #include <signal.h>
 #include <unistd.h>
 
-#define GPIO 26
+#define GPIO 26                /* D */
+#define GPIO_T 19              /* T (FNI-Takt) */
 #define KLOPF_US 3500          /* Statusabfrage: 1-2 Interrupt-Takte low */
 #define KLOPF_BEFEHL_US 8500   /* Befehl: >= 3 Takte low, dann hört der CP1 zu */
 #define NACH_KLOPF_US 300
-#define EINS_US 150
-#define NULL_US 750
-#define LUECKE_US 150
+#define EINS_US 50
+#define NULL_US 150
+#define LUECKE_US 50
+/* FNI: Mindestzeiten; Verzögerungen des Pi verlängern nur (der CP1 fragt alle 15 µs ab) */
+#define FNI_LOW_US 40
+#define FNI_HIGH_US 40
+#define FNI_ANNAHME_US 300000  /* so lange auf „T low“ (Auftrag übernommen) warten */
+#define FNI_FRIST_US 5000000   /* so lange darf der CP1 T festhalten (Flash löschen/kopieren) */
 
 static volatile uint32_t *g;
 
@@ -46,7 +57,121 @@ static inline void low(void) {
 }
 static inline void los(void) { g[0x08 / 4] &= ~(7u << 18); }    /* Eingang */
 static inline int pegel(void) { return (g[0x34 / 4] >> GPIO) & 1; }
-static void ende(int sig) { los(); _exit(sig ? 128 + sig : 0); }   /* nie mit Leitung low aufhören */
+/* T = GPIO 19: GPFSEL1, Bits 27..29 */
+static inline void t_low(void) {
+    g[0x28 / 4] = 1u << GPIO_T;
+    g[0x04 / 4] = (g[0x04 / 4] & ~(7u << 27)) | (1u << 27);
+}
+static inline void t_los(void) { g[0x04 / 4] &= ~(7u << 27); }
+static inline int t_pegel(void) { return (g[0x34 / 4] >> GPIO_T) & 1; }
+static void ende(int sig) { los(); t_los(); _exit(sig ? 128 + sig : 0); }   /* nie mit Leitung low aufhören */
+
+/* ---------------- FNI ---------------- */
+static int t_warten(int pegel_soll, uint64_t frist_us) {
+    uint64_t ende_ = us() + frist_us;
+    while (t_pegel() != pegel_soll) if (us() > ende_) return 0;
+    return 1;
+}
+static int bit_senden(int b) {
+    if (!t_warten(1, FNI_FRIST_US)) return 0;
+    warte_bis(us() + FNI_HIGH_US);
+    if (b) los(); else low();
+    uint64_t t = us(); t_low(); warte_bis(t + FNI_LOW_US); t_los();
+    return 1;
+}
+static int bit_lesen(int *b) {
+    if (!t_warten(1, FNI_FRIST_US)) return 0;
+    warte_bis(us() + FNI_HIGH_US);
+    los();
+    uint64_t t = us(); t_low(); warte_bis(t + FNI_LOW_US); t_los();
+    if (!t_warten(1, FNI_FRIST_US)) return 0;    /* der CP1 hat D gesetzt und lässt T los */
+    *b = pegel();
+    return 1;
+}
+static uint8_t crc8(const uint8_t *d, int n) {
+    uint8_t c = 0;
+    for (int i = 0; i < n; i++) { c ^= d[i]; for (int k = 0; k < 8; k++) c = (c & 0x80) ? (uint8_t)((c << 1) ^ 0x07) : (uint8_t)(c << 1); }
+    return c;
+}
+static int byte_senden(uint8_t x) { for (int k = 0; k < 8; k++) if (!bit_senden(x >> k & 1)) return 0; return 1; }
+static int byte_lesen(uint8_t *x) {
+    *x = 0;
+    for (int k = 0; k < 8; k++) { int b; if (!bit_lesen(&b)) return 0; *x |= (uint8_t)(b << k); }
+    return 1;
+}
+/* 1 gut, 0 Zeit um, -1 nach Versuchen aufgegeben */
+static int block_senden(const uint8_t *d, int n) {
+    for (int v = 0; v < 4; v++) {
+        for (int i = 0; i < n; i++) if (!byte_senden(d[i])) return 0;
+        if (!byte_senden(crc8(d, n))) return 0;
+        int q; if (!bit_lesen(&q)) return 0;
+        if (q) return 1;
+    }
+    return -1;
+}
+static int block_lesen(uint8_t *d, int n) {
+    uint8_t buf[9];
+    for (int v = 0; v < 4; v++) {
+        for (int i = 0; i <= n; i++) if (!byte_lesen(&buf[i])) return 0;
+        int ok = crc8(buf, n) == buf[n];
+        if (!bit_senden(ok)) return 0;
+        if (ok) { memcpy(d, buf, n); return 1; }
+    }
+    return -1;
+}
+static void fni(char *zeile) {
+    char richtung; unsigned anf, anz; char kopfhex[16] = "", datenhex[1100] = "";
+    static uint8_t daten[256 * 18 + 600];
+    if (sscanf(zeile, "F %c %u %u %15s %1099s", &richtung, &anf, &anz, kopfhex, datenhex) < 4 || strlen(kopfhex) != 8) { printf("FEHLER Aufruf\n"); return; }
+    uint8_t kopf[4]; for (int i = 0; i < 4; i++) { unsigned x; sscanf(kopfhex + 2 * i, "%2x", &x); kopf[i] = x; }
+    int zellen = anz ? (int)anz : 256, laenge = 0;
+    if (richtung == 'E') {
+        if ((int)strlen(datenhex) != 4 * zellen) { printf("FEHLER Datenlaenge\n"); return; }
+        for (int i = 0; i < 2 * zellen; i++) { unsigned x; sscanf(datenhex + 2 * i, "%2x", &x); daten[i] = x; }
+    }
+    los(); t_los();
+    if (!t_warten(0, FNI_ANNAHME_US)) { printf("FEHLER nicht_angenommen\n"); return; }
+    int r;
+    if (richtung == 'N') {          /* alle Namen */
+        uint8_t k[4]; r = block_lesen(k, 4);
+        if (r != 1 || memcmp(k, kopf, 4)) { printf("FEHLER Kopf\n"); los(); t_los(); return; }
+        for (;;) {
+            if (laenge + 18 > (int)sizeof daten) { printf("FEHLER zu_viele\n"); los(); t_los(); return; }
+            if (block_lesen(daten + laenge, 8) != 1) { printf("FEHLER Namen\n"); los(); t_los(); return; }
+            if (daten[laenge] == 0) break;
+            if (block_lesen(daten + laenge + 8, 8) != 1 || block_lesen(daten + laenge + 16, 2) != 1) { printf("FEHLER Namen\n"); los(); t_los(); return; }
+            laenge += 18;
+        }
+        los();
+        if (!t_warten(1, FNI_FRIST_US)) { printf("FEHLER Ende\n"); t_los(); return; }
+        printf("OK ");
+        for (int i = 0; i < laenge; i++) printf("%02x", daten[i]);
+        printf("\n");
+        return;
+    }
+    if (richtung == 'E') r = block_senden(kopf, 4);
+    else { uint8_t k[4]; r = block_lesen(k, 4); if (r == 1 && memcmp(k, kopf, 4)) { printf("FEHLER Kopf\n"); los(); t_los(); return; } }
+    if (r != 1) { printf("FEHLER Kopf_%s\n", r ? "aufgegeben" : "Zeit"); los(); t_los(); return; }
+    int c = anf & 0xFF, rest = zellen, pos = 0;
+    while (rest) {
+        int k = 4 - (c & 3); if (k > rest) k = rest;
+        r = richtung == 'E' ? block_senden(daten + pos, 2 * k) : block_lesen(daten + pos, 2 * k);   /* A und K */
+        if (r != 1) { printf("FEHLER Block_%d_%s\n", pos / 2, r ? "aufgegeben" : "Zeit"); los(); t_los(); return; }
+        pos += 2 * k; rest -= k; c = (c + k) & 0xFF;
+    }
+    if (richtung == 'K') {          /* Bankkopf: Name, Generation, gültig */
+        static const int teile[3] = { 8, 8, 2 };
+        for (int i = 0; i < 3; i++) {
+            if (block_lesen(daten + pos, teile[i]) != 1) { printf("FEHLER Bankkopf\n"); los(); t_los(); return; }
+            pos += teile[i];
+        }
+    }
+    los();
+    if (!t_warten(1, FNI_FRIST_US)) { printf("FEHLER Ende\n"); t_los(); return; }
+    printf("OK");
+    if (richtung != 'E') { printf(" "); for (int i = 0; i < pos; i++) printf("%02x", daten[i]); }
+    printf("\n");
+}
 
 int main(void) {
     int fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
@@ -60,9 +185,10 @@ int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     printf("BEREIT %s\n", rt ? "rt" : "ohne-rt");
 
-    char zeile[256];
+    char zeile[1200];
     static unsigned lows[4096];
     while (fgets(zeile, sizeof zeile, stdin)) {
+        if (zeile[0] == 'F') { fni(zeile); continue; }
         char rahmen[64]; int bits = 0;
         if (sscanf(zeile, "%63s %d", rahmen, &bits) != 2 || bits < 0 || bits > 4096) { printf("FEHLER\n"); continue; }
         uint8_t b[16]; int nb = 0;

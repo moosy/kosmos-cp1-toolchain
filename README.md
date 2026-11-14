@@ -6,88 +6,64 @@ See https://de.wikipedia.org/wiki/Kosmos_CP1 for details.
 A comprehensive collection of documentation can be found at 
 http://www.8bit-homecomputermuseum.at/computer/kosmos_computer_praxis_cp1.html.
 
-Quick reference (German, 3 pages A4, firmware 4.02 with all extensions): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
+Quick reference (German, 3 pages A4, firmware 4.02 with all extensions; not yet updated for 5.x): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
 
 This toolchain consists of the following tools:
 
-kosmos_recv.py filename.json
-----------------------------
+Firmware 5.01 in short
+----------------------
 
-A python script that can transfer the contents of the CP1 memory to a JSON file.
-It is designed to run on a Raspberry Pi, where one GPIO pin (I use GPIO 26) has to 
-be connected to pin 8 on port 1 of the CP1.
-The Python scripts use gpiozero and work with both gpiozero 1.x and 2.x
-(gpiozero 2.0, shipped with Raspberry Pi OS bookworm and trixie, only accepts keyword arguments).
+The CP1 runs an extended firmware (own code in the 8049's upper address range, two halves of
+an AT28C64B switched by P1.4, see "SPI flash" below). At power-on it shows its version
+(`5.01`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
+flash, and the Raspberry Pi talks to the CP1 over port 1 terminals 7 and 8 at any time.
 
-Beware: The CP1 is a 5V device, therefore the voltage to the Raspberry Pi must be limited!
-It turns out a simple Zener diode with a resistor does the job:
+Wiring to the Pi (both lines with the same protection; the Pi only ever pulls low):
 
-```                     
-GPIO: --------o-----[1 kOhm]------ Port 1/8
-              |
+```
+GPIO: --------o-----[1 kOhm]------ Port 1/8   (Pin 37 = BCM 26: data / remote control)
+              |                    Port 1/7   (Pin 35 = BCM 19: clock for fast transfers)
             -----,
               ^     Zener diode 3,3 V
              / \
             -----
               |
-GND:  --------o-------------------- GND 
+GND:  --------o-------------------- GND
 ```
 
-After the script has been started, press CAS on your CP1.
-Note that the CP1 waits 16 seconds before starting the transfer.
+Beware: The CP1 is a 5V device, therefore the voltage to the Raspberry Pi must be limited.
 
-The transfer takes about 3.5 min. or 7 min. with memory expansion installed.
-This cannot be accelerated as the CP1 determines the speed of the communication.
+Two transfer modes:
+- **NIE** (normal, interrupt enabled): small things in the background, unnoticed, also while a
+  program runs: display and status, key presses, internal RAM, single memory cells.
+- **FNI** (fast, no interrupt): whole banks or parts of them, from/to memory or flash. The CP1
+  switches its interrupt off for about a second and shows the direction on the right three
+  digits: `C-P` CP1 -> Pi, `P-C` Pi -> CP1, `F-P` flash -> Pi, `P-F` Pi -> flash, then `rdY`
+  (or `Err`). FNI jobs only start while the CP1 waits for keys; otherwise they are refused.
 
-The data is received and written to the file.
-If you do not have a memory extension installed, you may need to press CAS and STP
-after the CP1 is ready, because the script is still waiting for the rest of the data.
-
-
-
-kosmos_send.py filename.json
-----------------------------
-
-This is the counterpart to the kosmos_recv.py file. It sends compatible JSON file data to the CP1.
-After you have started the script, press the CAL button on your CP1.
-
-This transfer is a bit faster because we control the transfer. If
-errors occur, try increasing the time_base parameter in the script.
-Mine works fine with 15; a value of 33 is the original speed.
+Decimal point (hardware mod): the DP segments of all digits are connected and driven by PA7
+of the 8155 (pin 28) through the former overvoltage BC238C. In normal operation the firmware
+lights a separator dot after the third digit (`P  .000`); SEG programs can use it freely.
 
 
 
-Fast cassette: --schnell
-------------------------
+kosmos_send.py / kosmos_recv.py
+-------------------------------
 
 ```
-kosmos_recv.py --schnell filename.json
-kosmos_send.py --schnell filename.json [--von N] [--bis M]
+kosmos_send.py filename.json                   JSON -> CP1 memory (FNI, about 1 s)
+kosmos_recv.py filename.json [--von N --bis M] CP1 memory -> JSON (without range: 000 to memory size)
 ```
 
-Needs the CP1 running the "schnell" firmware (own code in 0x800-0xFFF, see the
-EA adapter project: 8049 with EA = high, AT28C64B, A11 wired to P23). With it, the
-whole memory (256 cells) is transferred in about 6-8 seconds instead of 7 minutes.
+No key press on the CP1 is needed. If the server `kosmos_remote.py serve` runs, both go
+through it, otherwise they use the GPIOs directly. Same as `kosmos_remote.py laden/speichern`.
 
-On the CP1:
-- CAS: the bucket symbol ⊓ appears at once. Released: send all cells (000-127 or 000-255
-  with expansion). Held: `_ __ ___` builds up on the right, after 1 s the display shows
-  `⊓ Fr ___`; type the first cell, CAS, then `⊓ to ___`, type the last cell, CAS. Only this
-  range is sent. CLR clears the input, STP aborts.
-- CAL: the open bucket ⊔ appears and the CP1 waits for data. Only the cells contained in the
-  transfer are overwritten, so you can e.g. load a subroutine library into cells 200-255.
-- At the end the display shows `rdY`, or `⊓ Su Err` / `⊔ Su Err` on a checksum/format error.
-
-Received partial ranges are saved as JSON with only these cells. `kosmos_send.py --schnell`
-sends all cells of the file (they must be contiguous) or the range given by --von/--bis.
-Press CAL on the CP1 first, then confirm on the Pi.
-
-Sending re-runs itself with `sudo` to get real-time priority: on a Pi Zero, pulses
-otherwise get up to 0.5 ms too long (measured), which breaks the 0.4/1.2 ms encoding.
-
-Line protocol: idle high; one bit = low pulse, 0.4 ms = 1, 1.2 ms = 0, followed by at least
-0.4 ms high (2 ms after each byte); LSB first. Frame: $C1, first cell, last cell, per cell
-command + argument, CRC-8 (polynomial $07, init 0) over everything before.
+Older firmware:
+- `--kassette`: the original slow cassette (original firmware up to 4.x; press CAS or CAL on
+  the CP1). Uses GPIO 26 with gpiozero (1.x and 2.x). Receiving takes about 3.5 min (7 min
+  with memory expansion); sending is faster (`time_base` 15 instead of the original 33).
+- `--schnell`: the fast cassette of firmware 3.05-4.x (`kosmos_schnell.py`; bit = low pulse
+  0.4 ms = 1 / 1.2 ms = 0, frame $C1, first cell, last cell, cells, CRC-8).
 
 
 
@@ -95,58 +71,70 @@ Remote control: kosmos_remote.py
 --------------------------------
 
 ```
-kosmos_remote.py serve [--port 8049]     web page + API (keeps GPIO 26)
+kosmos_remote.py serve [--port 8049]     web page + API (keeps GPIO 26 and 19)
 kosmos_remote.py anzeige                 print the display
 kosmos_remote.py taste 0 0 0 pc run      press keys (name[:ms], e.g. cas:1500)
-kosmos_remote.py laden file.json         press CAL and send
-kosmos_remote.py speichern file.json [--von N --bis M]   press CAS and receive
+kosmos_remote.py laden file.json         file -> memory (FNI)
+kosmos_remote.py speichern file.json [--von N --bis M]   memory -> file (FNI)
+kosmos_remote.py zelle N [B A]           read cell N, or set it to B.A (NIE, also while a program runs)
 ```
 
-Needs the "schnell" firmware 3.05 or later (4.01 for the flash). On the CP1, hold **RUN for 1 s**: the display shows
-`rc on` (again: `rc oFF`). RUN pressed shortly still starts the program (on release). The
-firmware shows its version (e.g. `4.01`) for one second at power-on.
-
-Then the Pi can press keys and read the display, accumulator, PC and status at any time,
-also while a program is running. The web page (http://bastelpi:8049/) shows the live display,
-a keyboard like the CP1's (keys are held as long as you hold them, so CAS 1 s works), loads
-assembler source or JSON (it presses CAL itself) and fetches memory (it presses CAS itself).
-If a program drives terminal 8 of port 1 low permanently, the CP1 switches remote control off.
+Remote control is always on. The web page (http://bastelpi:8049/) shows the live display,
+accumulator and PC, has a keyboard like the CP1's (keys are held as long as you hold them, so
+"CAS 1 s" works), loads assembler source or JSON, fetches memory as listing and JSON, shows and
+edits single cells (optionally following them live while a program runs) and has a flash panel
+(directory, load, save, autoboot, fetch a bank, write a JSON file into a bank).
 
 The timing is done by `kosmos_rc` (C, built with `gcc -O2 -o kosmos_rc kosmos_rc.c`), which
-drives and samples the GPIO registers through /dev/gpiomem; Python on a Pi Zero is too slow for
-the short reply pulses. It needs real-time priority: run the server as a systemd service with
-`AmbientCapabilities=CAP_SYS_NICE` (user in group gpio). While the server runs, it owns
-GPIO 26: use `kosmos_remote.py laden/speichern` or the web page instead of `--schnell`.
+drives and samples the GPIO registers through /dev/gpiomem; Python on a Pi Zero is too slow.
+It needs real-time priority: run the server as a systemd service with
+`AmbientCapabilities=CAP_SYS_NICE` (user in group gpio).
 
-Protocol on the same line (P1.7, both sides only pull low):
-- Pi knocks by pulling the line low. The CP1's timer interrupt (every 2.56 ms) only counts the
-  ticks it sees low, it does not wait.
-- 3.5 ms low (1-2 ticks) = status request: the CP1 sends internal RAM 0x20..0x3A (display, key
-  buffer, accumulator, PC, status), one byte per interrupt, so the display keeps multiplexing.
-- 8.5 ms low (3 ticks) = command: the CP1 blanks the display, waits for the release and reads
-  4 bytes: bit = low pulse 150 µs = 1 / 750 µs = 0, 150 µs high, LSB first;
-  byte 4 = b1 ^ b2 ^ b3 ^ $A5.
+NIE protocol (terminal 8 = P1.7, handled in the CP1's timer interrupt every 2.56 ms):
+- The Pi knocks by pulling the line low. 3.5 ms = status request: the CP1 sends internal RAM
+  0x20..0x3A (display, key buffer, accumulator, PC, status), one byte per interrupt.
+- 8.5 ms = command: 4 bytes follow, bit = low pulse 50 µs = 1 / 150 µs = 0, at least 50 µs
+  high, LSB first; byte 4 = b1 ^ b2 ^ b3 ^ $A5. Replies: one byte per interrupt, low pulses
+  ~50 / ~150 µs, then the check byte (XOR ^ $A5).
   - `01 zm dd` hold key: z = keyboard row (2..6), m = column mask, dd = frames of 15.36 ms
-  - `02 aa nn` read nn bytes of internal RAM from aa
-  - `03 aa ww` write internal RAM aa = ww (firmware 4.01; acknowledged like `01`)
-- Reply, one byte per interrupt: data, then check byte (XOR ^ $A5); low pulse ~43 µs = 1 /
-  ~125 µs = 0, ~43 µs high. `01` is acknowledged with the check byte only.
+  - `02 aa nn` read nn bytes of internal RAM from aa; `03 aa ww` write internal RAM aa = ww
+  - `04 jj 00` start job jj (attention). Reply = F_JOB: jj = accepted. For FNI jobs the
+    acceptance is "terminal 7 goes low" instead.
+  - `05 aa nn` / `06 aa nn` read nn bytes from byte address aa of the internal / CP3 8155,
+    `07 aa ww` / `08 aa ww` write one byte (cell z = bytes 2z and 2z+1; CP3 = cells 128-255)
 - Key codes of the firmware: digit d = d + 1, OUT 11, INP 12, CAL 13, STEP 14, STP 15, RUN 16,
   CAS 17, CLR 18, PC 19, ACC 20; row = (code + 7) / 4, bit = (code + 7) % 4.
 
+FNI protocol (interrupt off): terminal 7 = T (P1.6, clock), terminal 8 = D (P1.7, data).
+- Per bit the Pi pulls T low (at least 40 µs); the CP1 holds T low as long as it is busy
+  (erasing the flash may take a while). Then T is high for at least 40 µs. D low = 0, LSB first;
+  the sender sets D, the CP1 samples about every 15 µs.
+- Head [job, bank, first cell, count] + CRC-8, then blocks up to the next 4-cell boundary
+  (2 bytes per cell) + CRC-8 (polynomial $07, init 0). After each block the receiver answers
+  one bit: 1 = ok, 0 = repeat (3 tries on the CP1 side).
+- Parameters, written with `03` before the `04`: F_BANK 0x2C, F_ANF 0x3C, F_ANZ 0x3D
+  (0 = 256), F_START 0x3E (255 = no directory entry), name 0x60-0x6F. Result in F_JOB (0x26):
+  0 = ok, $EE = error/refused.
+- Jobs: $20 Pi -> memory, $21 memory -> Pi, $22 / $23 Pi -> flash (without / with name),
+  $24 flash -> Pi, $25 whole bank -> Pi (256 cells + 18-byte bank head: name, generation,
+  valid), $26 all names (per used bank a block [bank, 0, name 0-5], [name 6-13], [name 14-15];
+  end = block of 8 zeros). The directory is read with $24 of bank 0 plus $26.
+- Jobs with interrupt on: $01 read 16 raw flash bytes, $04 load bank, $08 autoboot,
+  $10 find the next used bank from F_BANK, $81 memory -> bank with name.
 
 
-SPI flash ("hard disk"): firmware 4.01
---------------------------------------
+
+SPI flash ("hard disk")
+-----------------------
 
 ```
 kosmos_remote.py flash                         directory (bank, start, name, autoboot)
 kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   CP1 memory -> bank 12
 kosmos_remote.py flash-laden 12                bank 12 -> memory, PC = start
 kosmos_remote.py autoboot 12                   start bank 12 at power-on (0 = off)
+kosmos_remote.py bank-sichern 12 file.json     bank 12 -> file directly (memory untouched)
+kosmos_remote.py bank-einspielen 12 file.json ["Name"] [--start 20]   file -> bank 12 directly
 ```
-
-The web page has the same functions in its "Flash" panel.
 
 Hardware: an IS25LP016D (2 MB, 3.3 V) on port 1 terminals 1-4: P1.0 = CS#, P1.1 = SCK,
 P1.2 = SI, P1.3 = SO. Supply from 5 V via 56 Ohm and a 3.3 V Zener diode (plus 10 µF and
@@ -157,24 +145,28 @@ The firmware no longer fits into 4 KB, so it uses both halves of the AT28C64B: *
 driven by P1.4** (pin 31 of the 8049; on the adapter, cut the trace to terminal 5 and wire the
 CPU side to the middle pin of JP3, jumper removed). Both halves contain the same lower 2 KB
 (original code, interrupt, remote control); the upper 2 KB of half A (A12 = 1, EEPROM
-0x1000-0x1FFF, selected after reset) hold the existing extensions, those of half B (EEPROM
-0x0000-0x0FFF) the flash code. Switching happens in small stubs at the same address in both
-halves (`ANL/ORL P1,#$10`). `OUT P1A` keeps P1.0-P1.4 and P1.7 at 1, so programs can only use
-terminals 6 and 7 of port 1.
+0x1000-0x1FFF, selected after reset) hold the key handling and extensions, those of half B
+(EEPROM 0x0000-0x0FFF) the flash and FNI code. Switching happens in small stubs at the same
+address in both halves (`ANL/ORL P1,#$10`). `OUT P1A` keeps P1.0-P1.4 and P1.6/P1.7 at 1, so
+programs can only use terminal 6 of port 1.
 
 Storage: 256 banks of 256 cells (512 bytes). Each bank uses two 4 KB sectors alternately:
 writing erases the free sector, copies the old contents over in 8-byte pieces, inserts the new
 cells and finally marks the sector valid (generation counter), so a power failure never loses
 the old version. Bank 0 is the directory: cell 0 = (00, autoboot bank), cell n = (00, start
-of bank n). Name (16 ASCII characters) and generation are stored behind the cells. Writing
-takes about 0.6 s, saving with directory entry about 1.3 s, reading 256 cells about 0.2 s.
+of bank n). Name (16 ASCII characters) and generation are stored behind the cells.
 
-On the CP1 (always 3 digits):
-- `nnn CAS`: save memory to bank nnn, start = current PC (set it first with `xxx PC`).
-  Display `5to nnn`, then `5to rdY`.
-- `nnn CAL`: load bank nnn, PC = start (`LdA nnn`, then `P xxx`); RUN starts it.
-- `nnn` + hold CAL for 1 s: autoboot bank nnn (`bot rdY`), `000` = off. At power-on the CP1
-  shows `bot nnn` for 2 s (any key aborts), then loads and runs the bank.
+On the CP1 (always 3 digits; CLR clears the input, STP aborts):
+- CAS short: `bAn ___`, type nnn, CAS: memory -> bank nnn, start = current PC (set it first
+  with `xxx PC`). Display `5to rdY`.
+- CAS held 1 s: `Fr ___`, `to ___` (cells of memory), `bAn ___`, `d5t ___` (first cell in the
+  bank), each confirmed with CAS. Only pressing CAS takes the default (whole memory, cell 0).
+  The rest of the bank stays, the directory is not touched.
+- CAL short: `bAn ___`, nnn CAL: load bank nnn, PC = start (`P xxx`); RUN starts it.
+- CAL held 1 s: `bAn ___`, `Fr ___`, `to ___` (cells in the bank), `d5t ___` (cells of
+  memory). PC stays, display `LdA rdY`.
+- RUN held 1 s: `bot ___`, nnn RUN: autoboot bank nnn (`bot rdY`), `000` = off. At power-on
+  the CP1 shows `bot nnn` for 2 s (any key aborts), then loads and runs the bank.
 - Errors: F-010 no flash answers, F-011 bank empty, F-003 bank 0 / invalid range, F-001 not
   3 digits.
 
@@ -193,11 +185,7 @@ PSK 10     ; 10 cells
 FRD 80     ; -> memory 80..89
 ```
 
-Remote jobs (used by the web page and the commands above): the Pi writes the parameters with
-`03` (F_BANK 0x2C, F_SEKT 0x2D, F_OFH/F_OFL 0x2E/0x2F, name 0x60-0x6F), F_JOB (0x26) last, then
-presses CAL; done when F_JOB is 0 again. Jobs: $01 read 16 raw bytes, $81 save memory with
-name, $04 load, $08 autoboot, $10 find the next used bank from F_BANK. They only run while the
-CP1 waits for keys (no program running).
+Demos: `8 RUN` reaction test, `9 RUN` countdown.
 
 
 
@@ -454,3 +442,29 @@ user@machine:# sudo apt update
 user@machine:# sudo apt install php -y
 ```
 
+
+For the remote control, build the timing helper and run the server as a service:
+
+```
+user@machine:# gcc -O2 -o kosmos_rc kosmos_rc.c
+```
+
+```
+# /etc/systemd/system/kosmos-remote.service
+[Unit]
+Description=Kosmos CP1 remote control (web page port 8049)
+After=network-online.target
+
+[Service]
+User=pi
+SupplementaryGroups=gpio
+WorkingDirectory=/home/pi/kosmos-cp1-toolchain
+ExecStart=/usr/bin/python3 /home/pi/kosmos-cp1-toolchain/kosmos_remote.py serve
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+NoNewPrivileges=true
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```

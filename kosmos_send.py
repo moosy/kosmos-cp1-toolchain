@@ -1,13 +1,29 @@
-#!/usr/bin/python -u
-from __future__ import division
+#!/usr/bin/python3 -u
+"""Programm (JSON) zum Kosmos CP1.
+
+  kosmos_send.py datei.json                  Firmware 5.x: direkt ins RAM per FNI (~1 s, keine Taste nötig;
+                                             geht über den Server kosmos_remote.py serve, falls er läuft)
+  kosmos_send.py --kassette datei.json       alte Kassette (Original-Firmware bis 4.x: am CP1 CAL drücken)
+  kosmos_send.py --schnell datei.json [--von N] [--bis M]   schnelle Kassette (Firmware 3.05–4.x)
+"""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+if "--schnell" in sys.argv:  # schnelle Kassette (CP1-Firmware 3.05–4.x), siehe kosmos_schnell.py
+    import kosmos_schnell
+    sys.exit(kosmos_schnell.main(["send"] + [a for a in sys.argv[1:] if a != "--schnell"]))
+if "--kassette" not in sys.argv:
+    if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
+        print(__doc__); sys.exit(1)
+    import kosmos_remote
+    sys.exit(kosmos_remote.cli(["laden", sys.argv[1]]))
+sys.argv = [a for a in sys.argv if a != "--kassette"]
+
+# ---- alte Kassette (Original-Firmware)
 from gpiozero import LED, Button
 from time import sleep
 import json
 import sys
-
-if "--schnell" in sys.argv:  # schnelle Kassette (CP1-Firmware ab 0x800), siehe kosmos_schnell.py
-    import kosmos_schnell
-    sys.exit(kosmos_schnell.main(["send"] + [a for a in sys.argv[1:] if a != "--schnell"]))
 
 time_base = 15  # ms, bit is 3x as long
 

@@ -1,14 +1,30 @@
-#!/usr/bin/python -u
-from __future__ import division
+#!/usr/bin/python3 -u
+"""Speicher des Kosmos CP1 in eine JSON-Datei.
+
+  kosmos_recv.py datei.json [--von N] [--bis M]   Firmware 5.x: RAM per FNI (~1 s, keine Taste nötig;
+                                                  ohne Bereich 000 bis Speichergröße)
+  kosmos_recv.py --kassette datei.json            alte Kassette (Original-Firmware bis 4.x: am CP1 CAS drücken)
+  kosmos_recv.py --schnell datei.json             schnelle Kassette (Firmware 3.05–4.x)
+"""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+if "--schnell" in sys.argv:  # schnelle Kassette (CP1-Firmware 3.05–4.x), siehe kosmos_schnell.py
+    import kosmos_schnell
+    sys.exit(kosmos_schnell.main(["recv"] + [a for a in sys.argv[1:] if a != "--schnell"]))
+if "--kassette" not in sys.argv:
+    if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
+        print(__doc__); sys.exit(1)
+    import kosmos_remote
+    sys.exit(kosmos_remote.cli(["speichern"] + sys.argv[1:]))
+sys.argv = [a for a in sys.argv if a != "--kassette"]
+
+# ---- alte Kassette (Original-Firmware)
 from gpiozero import LED, Button
 from time import sleep
 import time
 import json
 import sys
-
-if "--schnell" in sys.argv:  # schnelle Kassette (CP1-Firmware ab 0x800), siehe kosmos_schnell.py
-    import kosmos_schnell
-    sys.exit(kosmos_schnell.main(["recv"] + [a for a in sys.argv[1:] if a != "--schnell"]))
 
 
 up = '\033[F'

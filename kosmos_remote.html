@@ -63,6 +63,8 @@
   table.verz td.knopf { text-align: right; white-space: nowrap; }
   table.verz button.b { padding: 4px 9px; font-size: 13px; }
   .stern { color: #ffd479; }
+  table.zellen input[type=number] { width: 70px; padding: 3px 6px; }
+  table.zellen td.geaendert input { border-color: var(--gut); }
   @media (max-width: 520px) { table.verz td.start, table.verz th.start { display: none; } }
 </style>
 </head>
@@ -89,25 +91,25 @@
         <button class="t" data-k="step">STEP<small>Schritt</small></button>
         <button class="t" data-k="stp">STP<small>Stopp</small></button>
         <button class="t" data-k="run">RUN<small>Lauf</small></button>
-        <button class="t" data-k="cal">CAL<small>Cass lesen</small></button>
+        <button class="t" data-k="cal">CAL<small>Flash laden</small></button>
       </div>
       <div class="reihe einzug2">
         <button class="t" data-k="clr">CLR<small>Irrtum</small></button>
         <button class="t" data-k="acc">ACC<small>Akku</small></button>
-        <button class="t" data-k="cas">CAS<small>Cass speichern</small></button>
+        <button class="t" data-k="cas">CAS<small>Flash speichern</small></button>
       </div>
       <div class="reihe einzug2">
         <button class="t" data-k="pc">PC<small>Programmzähler</small></button>
         <button class="t" data-k="out">OUT<small>auslesen</small></button>
         <button class="t" data-k="inp">INP<small>eingeben</small></button>
       </div>
-      <p class="hinweis">Tasten so lange halten wie am Gerät (CAS 1 s = Bereich). Tastatur: Ziffern, Enter = INP, P = PC, R = RUN, S = STP, Leertaste = STEP, C = CLR, A = ACC, O = OUT.</p>
+      <p class="hinweis">Tasten so lange halten wie am Gerät: CAS/CAL kurz = ganze Bank, lang (1 s) = Bereich; RUN lang = Autoboot. Tastatur: Ziffern, Enter = INP, P = PC, R = RUN, S = STP, Leertaste = STEP, C = CLR, A = ACC, O = OUT.</p>
     </div>
   </section>
 
   <div class="panele">
     <section class="panel">
-      <h2>Programm laden (CAL)</h2>
+      <h2>Programm laden</h2>
       <label for="quelle">Quelltext für den Assembler, oder eine .json-Datei wählen</label>
       <textarea id="quelle" spellcheck="false" placeholder="AKO 123&#10;ANZ&#10;HLT"></textarea>
       <div class="knoepfe">
@@ -117,7 +119,7 @@
       <div class="meldung" id="ladenM"></div>
     </section>
     <section class="panel">
-      <h2>Speicher holen (CAS)</h2>
+      <h2>Speicher holen</h2>
       <div class="knoepfe">
         <button class="b" id="holenAlles">Alles</button>
         <span class="klein">oder Zellen</span>
@@ -131,7 +133,7 @@
       <div class="knoepfe"><button class="b zweit" id="download" hidden>Als JSON sichern</button></div>
     </section>
     <section class="panel breit">
-      <h2>Flash <span class="klein">· Firmware 4.01, nur wenn kein Programm läuft</span></h2>
+      <h2>Flash <span class="klein">· Firmware 5.x, nur wenn kein Programm läuft</span></h2>
       <div class="knoepfe">
         <button class="b" id="verzLesen">Verzeichnis lesen</button>
         <span class="klein" id="autoInfo"></span>
@@ -147,9 +149,26 @@
         <input type="text" id="fName" maxlength="16" placeholder="Name (16 Zeichen)" aria-label="Name">
         <span class="klein">Start</span>
         <input type="number" id="fStart" min="0" max="255" placeholder="PC" aria-label="Startadresse">
-        <button class="b" id="fSpeichern">Speichern</button>
+        <button class="b" id="fSpeichern">RAM speichern</button>
+        <label class="b zweit" style="cursor:pointer" title="Zellen aus einer .json-Datei direkt in die Bank schreiben, das RAM bleibt unberührt">JSON einspielen …<input type="file" id="fDatei" accept=".json" hidden></label>
       </div>
       <div class="meldung" id="flashM"></div>
+    </section>
+    <section class="panel breit">
+      <h2>Zellen <span class="klein">· einzeln lesen und ändern, auch während ein Programm läuft</span></h2>
+      <div class="knoepfe">
+        <span class="klein">ab Zelle</span>
+        <input type="number" id="zVon" min="0" max="255" value="0" aria-label="ab Zelle">
+        <span class="klein">Anzahl</span>
+        <input type="number" id="zAnz" min="1" max="32" value="8" aria-label="Anzahl">
+        <button class="b" id="zLesen">Lesen</button>
+        <label class="klein"><input type="checkbox" id="zLive"> mitlaufen</label>
+      </div>
+      <table class="verz zellen" id="zTab" hidden>
+        <thead><tr><th>Zelle</th><th>Befehl</th><th>Argument</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="meldung" id="zM"></div>
     </section>
   </div>
 </main>
@@ -277,23 +296,25 @@ $('#datei').onchange = e => {
     return `${f.name}: Zellen ${String(r.von).padStart(3, '0')}–${String(r.bis).padStart(3, '0')} geladen`;
   });
 };
-let geholt = null;
+let geholt = null, geholtName = 'cp1';
+function zeigeGeholt(r, name) {
+  geholt = r.zellen; geholtName = name;
+  const l = $('#listing'); l.textContent = r.listing || JSON.stringify(r.zellen); l.hidden = false;
+  $('#download').hidden = false;
+  const k = Object.keys(r.zellen).sort((a, b) => a - b);   // „100“ käme sonst vor „000“
+  $('#holenM').style.color = 'var(--gut)';
+  $('#holenM').textContent = `${name.startsWith('bank') ? 'Bank ' + name.slice(4, 7) + ': ' : ''}Zellen ${k[0]}–${k[k.length - 1]} geholt, Prüfsumme ok`;
+  return $('#holenM').textContent;
+}
 function holen(knopf, obj) {
-  lange(knopf, $('#holenM'), async () => {
-    const r = await api('/api/speichern', obj);
-    geholt = r.zellen;
-    const l = $('#listing'); l.textContent = r.listing || JSON.stringify(r.zellen); l.hidden = false;
-    $('#download').hidden = false;
-    const k = Object.keys(r.zellen);
-    return `Zellen ${k[0]}–${k[k.length - 1]} geholt, Prüfsumme ok`;
-  });
+  lange(knopf, $('#holenM'), async () => zeigeGeholt(await api('/api/speichern', obj), 'cp1'));
 }
 $('#holenAlles').onclick = () => holen($('#holenAlles'), {});
 $('#holenTeil').onclick = () => holen($('#holenTeil'), { von: +$('#von').value, bis: +$('#bis').value });
 $('#download').onclick = () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(geholt)], { type: 'application/json' }));
-  a.download = 'cp1-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json'; a.click();
+  a.download = geholtName + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json'; a.click();
 };
 // ---- Flash
 const drei = n => String(n).padStart(3, '0');
@@ -306,10 +327,16 @@ function zeigeVerz(v) {
     const auto = v.autoboot === e.bank;
     tr.innerHTML = `<td>${drei(e.bank)}${auto ? ' <span class="stern" title="Autoboot">★</span>' : ''}</td><td></td>` +
       `<td class="start">${drei(e.start)}</td><td class="knopf"><button class="b" data-a="laden">Laden</button> ` +
+      `<button class="b zweit" data-a="sichern" title="Bank direkt aus dem Flash holen (RAM bleibt)">Sichern</button> ` +
       `<button class="b zweit" data-a="auto"${auto ? ' disabled' : ''}>Autoboot</button></td>`;
     tr.children[1].textContent = e.name || '–';
     tr.querySelector('[data-a=laden]').onclick = ev => flashTat(ev.target, '/api/flash/laden', { bank: e.bank },
       `Bank ${drei(e.bank)} geladen, PC = ${drei(e.start)} · RUN startet`, false);
+    tr.querySelector('[data-a=sichern]').onclick = ev => lange(ev.target, $('#flashM'), async () => {
+      const r = await api('/api/bank/sichern', { bank: e.bank });
+      zeigeGeholt(r, `bank${drei(e.bank)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
+      return `Bank ${drei(e.bank)}${r.name ? ' „' + r.name.trim() + '“' : ''} geholt – Listing und JSON oben unter „Speicher holen“`;
+    });
     tr.querySelector('[data-a=auto]').onclick = ev => flashTat(ev.target, '/api/flash/autoboot', { bank: e.bank },
       `Autoboot: Bank ${drei(e.bank)}`, true);
     tb.appendChild(tr);
@@ -340,6 +367,59 @@ $('#fSpeichern').onclick = () => {
   if (verzeichnis?.baenke.some(e => e.bank === bank) && !confirm(`Bank ${drei(bank)} überschreiben?`)) return;
   flashTat($('#fSpeichern'), '/api/flash/speichern', { bank, name, start: start === '' ? null : +start },
     `RAM in Bank ${drei(bank)} gespeichert`, true);
+};
+$('#fDatei').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const bank = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
+  e.target.value = '';
+  if (!(bank >= 1 && bank <= 255)) { $('#flashM').textContent = 'Bank 1..255'; return; }
+  if (verzeichnis?.baenke.some(x => x.bank === bank) && !confirm(`Zellen aus ${f.name} in Bank ${drei(bank)} schreiben? Zellen außerhalb der Datei bleiben.`)) return;
+  lange($('#fSpeichern'), $('#flashM'), async () => {
+    const zellen = JSON.parse(await f.text());
+    const r = await api('/api/bank/einspielen', { bank, zellen, name: name || null, start: start === '' ? null : +start });
+    if (start !== '' || name) zeigeVerz(await api('/api/flash'));
+    return `${f.name} -> Bank ${drei(bank)}, Zellen ${drei(r.von)}–${drei(r.bis)} (RAM unberührt)`;
+  });
+};
+
+// ---- Zellen per NIE
+let zTimer = null;
+async function zellenLesen(still) {
+  const von = Math.max(0, Math.min(255, +$('#zVon').value || 0));
+  const anz = Math.max(1, Math.min(32, +$('#zAnz').value || 1, 256 - von));
+  const r = await api('/api/zellen', { von, anzahl: anz });
+  const tb = $('#zTab tbody');
+  if (still && tb.dataset.von == von && tb.children.length === anz) {      // mitlaufen: nur Werte, nicht gerade bearbeitete Felder
+    for (const tr of tb.children) {
+      const v = r.zellen[tr.dataset.z];
+      tr.querySelectorAll('input').forEach((i, k) => { if (document.activeElement !== i && !i.dataset.neu) i.value = v[k]; });
+    }
+    return;
+  }
+  tb.textContent = ''; tb.dataset.von = von;
+  for (const [n, [bef, arg]] of Object.entries(r.zellen).sort((a, b) => a[0] - b[0])) {
+    const tr = document.createElement('tr'); tr.dataset.z = n;
+    tr.innerHTML = `<td>${n}</td><td><input type="number" min="0" max="255" aria-label="Befehl"></td>` +
+      `<td><input type="number" min="0" max="255" aria-label="Argument"></td><td class="knopf"><button class="b zweit" disabled>Schreiben</button></td>`;
+    const [ib, ia] = tr.querySelectorAll('input'), k = tr.querySelector('button');
+    ib.value = bef; ia.value = arg;
+    [ib, ia].forEach(i => i.oninput = () => { i.dataset.neu = 1; i.parentNode.classList.add('geaendert'); k.disabled = false; });
+    k.onclick = () => lange(k, $('#zM'), async () => {
+      const befehl = +ib.value, argument = +ia.value;
+      if (![befehl, argument].every(x => Number.isInteger(x) && x >= 0 && x <= 255)) throw new Error('Werte 0..255');
+      await api('/api/zelle', { zelle: +n, befehl, argument });
+      [ib, ia].forEach(i => { delete i.dataset.neu; i.parentNode.classList.remove('geaendert'); });
+      setTimeout(() => { k.disabled = true; });
+      return `Zelle ${n} = ${String(befehl).padStart(2, '0')}.${drei(argument)}`;
+    });
+    tb.appendChild(tr);
+  }
+  $('#zTab').hidden = false;
+}
+$('#zLesen').onclick = () => lange($('#zLesen'), $('#zM'), async () => { await zellenLesen(false); return ''; });
+$('#zLive').onchange = () => {
+  clearInterval(zTimer); zTimer = null;
+  if ($('#zLive').checked) zTimer = setInterval(() => { if (!beschaeftigt) zellenLesen(true).catch(e => { $('#zM').textContent = e.message; }); }, 1500);
 };
 </script>
 </body>

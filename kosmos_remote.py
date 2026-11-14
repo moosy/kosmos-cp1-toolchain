@@ -1,47 +1,44 @@
 #!/usr/bin/env python3
-"""Fernsteuerung für den Kosmos CP1 (Firmware ab 3.05, Flash ab 4.01) über GPIO 26 <-> P1.7.
+"""Fernsteuerung für den Kosmos CP1, Firmware 5.01: GPIO 26 <-> P1.7 (Klemme 8), GPIO 19 <-> P1.6 (Klemme 7).
 
-Am CP1 einmal RUN 1 s halten -> „rc on“. Dann:
+Die Fernsteuerung ist immer an. Befehle:
 
-  kosmos_remote.py serve [--port 8049]      Webseite + Schnittstelle (hält die Leitung)
+  kosmos_remote.py serve [--port 8049]      Webseite + Schnittstelle (hält die Leitungen)
   kosmos_remote.py anzeige                   Anzeige als Text
   kosmos_remote.py taste 0 0 0 pc run        Tasten drücken (Name[:ms], z. B. cas:1500)
-  kosmos_remote.py laden datei.json          CAL drücken und senden
-  kosmos_remote.py speichern datei.json [--von N --bis M]   CAS drücken und empfangen
+  kosmos_remote.py laden datei.json          Zellen ins RAM des CP1 (FNI, ~1 s)
+  kosmos_remote.py speichern datei.json [--von N --bis M]   RAM des CP1 in eine Datei (FNI)
+  kosmos_remote.py zelle N [B A]             Zelle N lesen bzw. auf B.A setzen (auch bei laufendem Programm)
   kosmos_remote.py flash                     Flash-Verzeichnis (Bank, Start, Name, Autoboot)
   kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   RAM des CP1 nach Bank 12
   kosmos_remote.py flash-laden 12            Bank 12 ins RAM, PC = Start
   kosmos_remote.py autoboot 12               beim Einschalten Bank 12 starten (0 = aus)
+  kosmos_remote.py bank-sichern 12 datei.json            Bank 12 direkt in eine Datei (RAM bleibt)
+  kosmos_remote.py bank-einspielen 12 datei.json ["Name"] [--start 20]   Datei direkt in Bank 12
 
 Läuft der Server, gehen die übrigen Befehle über ihn (http://localhost:PORT), sonst direkt.
 
-Protokoll (Pi -> CP1): Anklopfen = Leitung low; der Timer-Interrupt des CP1 zählt die Takte (2,56 ms)
-und hält dafür nicht an. 3,5 ms = Statusabfrage: der CP1 schickt RAM 0x20..0x3A (Anzeige, Akku, PC,
-Status). 8,5 ms = Befehl: der CP1 wartet aufs Loslassen; nach 300 µs kommen 4 Byte: je Bit Low-Puls,
-150 µs high, LSB zuerst; Byte 4 = B1 ^ B2 ^ B3 ^ $A5. (Bit 1 = 150 µs, Bit 0 = 750 µs, Schwelle 460 µs.)
-  01 zm dd   Taste: z = Tastaturzeile (2..6), m = Spaltenmaske, dd = Dauer in Bildern à 15,36 ms
-  02 aa nn   nn Byte internes RAM ab aa lesen
-  03 aa ww   internes RAM aa = ww (ab 4.01; Quittung wie 01)
-Flash (4.01): Parameter mit 03 ablegen (F_BANK 0x2C, F_SEKT 0x2D, F_OFH/F_OFL 0x2E/0x2F, Name 0x60..0x6F),
-zuletzt F_JOB (0x26), dann CAL drücken; fertig, wenn F_JOB wieder 0 ist. Aufträge: $01 16 Byte roh lesen,
-$81 RAM mit Name speichern (Start = PC), $04 laden, $08 Autoboot, $10 nächste belegte Bank ab F_BANK suchen.
-Geht nur, wenn der CP1 auf Tasten wartet (kein Programm läuft).
-Antwort nach 2,6 ms, JE INTERRUPT EIN BYTE (die Anzeige des CP1 läuft dabei weiter): die Daten,
-dann ein Prüfbyte (XOR ^ $A5); Pulse ~43 µs = 1 / ~125 µs = 0. Auf 01 kommt nur $A5 als Quittung.
-Senden und Messen macht das C-Hilfsprogramm kosmos_rc direkt an den GPIO-Registern (Python ist dafür
-auf dem Pi Zero zu langsam); es läuft als Unterprozess mit Echtzeitpriorität.
-Beide Seiten ziehen nur nach low (Open-Drain); der Pi lässt die Leitung sonst los.
+Zwei Übertragungsarten (die Bits macht das C-Hilfsprogramm kosmos_rc direkt an den GPIO-Registern):
+NIE (im Interrupt des CP1, unbemerkt): Anklopfen = Klemme 8 low. 3,5 ms = Statusabfrage (RAM 0x20..0x3A);
+  8,5 ms = Befehl: 4 Byte, je Bit Low 50 µs = 1 / 150 µs = 0, danach 50 µs high, LSB zuerst;
+  Byte 4 = B1 ^ B2 ^ B3 ^ $A5. Antwort je Interrupt-Takt ein Byte, Pulse ~50/~150 µs, dann Prüfbyte.
+  01 zm dd Taste · 02 aa nn RAM lesen · 03 aa ww RAM schreiben · 04 jj 00 Auftrag starten (nur im Leerlauf)
+  05/06 aa nn  nn Byte ab Byte aa der internen / CP3-8155 · 07/08 aa ww  Byte aa = ww  (Zelle z: Byte 2z, 2z+1)
+FNI (Interrupt des CP1 aus, sichtbar „Q-Z“): getaktet über Klemme 7, Daten auf Klemme 8, Blöcke mit CRC.
+  Aufträge: $20 Pi -> 8155, $21 8155 -> Pi, $22/$23 Pi -> Flash (mit Name), $24 Flash -> Pi,
+  $25 Bank komplett -> Pi (Zellen + 18 Byte Bankkopf), $26 alle Namen -> Pi (Verzeichnis).
+  Parameter: F_BANK 0x2C, F_ANF 0x3C, F_ANZ 0x3D (0 = 256), F_START 0x3E, Name 0x60..0x6F; fertig: F_JOB 0 / $EE.
+Weitere Aufträge (Interrupt an): $01 16 Byte Flash roh, $04 Bank laden, $08 Autoboot, $10 Bank suchen,
+  $81 RAM -> Bank mit Name. Aufträge gehen nur, wenn der CP1 auf Tasten wartet.
 """
 import json, os, sys, threading, time, subprocess, tempfile, math
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import kosmos_schnell as ks
+import kosmos_schnell as ks          # (nur noch die JSON-Hilfen)
 
 GPIO = 26
 PORT = 8049
-KLOPF_US, NACH_KLOPF_US = 3500, 300   # > 2,56 ms Interrupt-Takt; ab 5,1 ms low schaltet der CP1 die Fernsteuerung ab
-EINS_US, NULL_US, LUECKE_US = 150, 750, 150     # CP1-Schwelle 460 µs: ein unterbrochener Pi macht Pulse nur länger
-SCHWELLE_US = 80                                 # Antwort CP1 -> Pi: ~43 / ~125 µs (misst kosmos_rc)
+SCHWELLE_US = 100                                # Antwort CP1 -> Pi: ~50 / ~150 µs (misst kosmos_rc)
 VERSUCHE = 4
 BILD_MS = 15.36
 
@@ -65,15 +62,6 @@ def rahmen(cmd, a, b):
     return bytes([cmd, a, b, cmd ^ a ^ b ^ 0xA5])
 
 
-def pulse_rahmen(daten):
-    """-> [(low_us, high_us)] nach dem Anklopfen"""
-    plan = []
-    for byte in daten:
-        for i in range(8):
-            plan.append((EINS_US if byte >> i & 1 else NULL_US, LUECKE_US))
-    return plan
-
-
 def segtext(seg):
     out = ''
     for b in seg:
@@ -82,6 +70,7 @@ def segtext(seg):
 
 
 F_JOB, F_BANK, F_SEKT, F_OFH, F_OFL, F_NAME = 0x26, 0x2c, 0x2d, 0x2e, 0x2f, 0x60
+F_ANF, F_ANZ, F_START, MEM_SIZE = 0x3c, 0x3d, 0x3e, 0x3b
 
 
 def name_text(b):
@@ -98,93 +87,15 @@ class KeineAntwort(Exception):
 
 
 class Leitung:
-    """Hält GPIO 26: in Ruhe als Eingang mit Flankenmeldung, zum Senden kurz als Ausgang."""
+    """Hält die Leitungen über kosmos_rc (D = GPIO 26, T = GPIO 19); der Lock gilt für ganze Abläufe."""
 
     def __init__(self):
-        import lgpio
-        self.lg = lgpio
-        self.h = lgpio.gpiochip_open(0)
-        self.kanten = []
-        self.lock = threading.RLock()     # laden/speichern halten die Leitung über mehrere Schritte
-        self._eingang()
+        self.lock = threading.RLock()
         rc = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'kosmos_rc')
         self.rc = subprocess.Popen([rc], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
         self.rc_rt = self.rc.stdout.readline().split()[-1] == 'rt'
         if not self.rc_rt:
-            print('Hinweis: kosmos_rc ohne Echtzeitpriorität – Fernsteuerung unzuverlässig', flush=True)
-        self.cb = lgpio.callback(self.h, GPIO, lgpio.BOTH_EDGES, lambda c, g, l, t: self.kanten.append((t, l)))
-
-    def _eingang(self):
-        try:
-            self.lg.gpio_free(self.h, GPIO)
-        except Exception:
-            pass
-        self.lg.gpio_claim_alert(self.h, GPIO, self.lg.BOTH_EDGES, self.lg.SET_PULL_UP)
-
-    def _ausgang(self):
-        self.lg.gpio_free(self.h, GPIO)
-        self.lg.gpio_claim_output(self.h, GPIO, 1)
-
-    @staticmethod
-    def _rt(an):
-        try:
-            if an:
-                os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(50))
-            else:
-                os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
-            return True
-        except (PermissionError, OSError, AttributeError):
-            return False
-
-    def _pulse(self, plan, vorlauf=None, schlaf_ok=False, abtasten=0):
-        """plan: [(low_us, high_us)], vorlauf: (low_us, high_us) zum Anklopfen. -> gemessene Low-Längen"""
-        import gc
-        lg, h = self.lg, self.h
-        ns = time.perf_counter_ns
-        ist = []
-        self._ausgang()
-        rt = self._rt(True)
-        gc.disable()
-        try:
-            for low, high in ([vorlauf] if vorlauf else []) + plan:
-                lg.gpio_write(h, GPIO, 0)
-                t0 = ns(); ende = t0 + low * 1000
-                if low > 1500 and not schlaf_ok:      # Anklopfen nie verschlafen (CP1 hält > 5 ms low für Defekt)
-                    pass
-                elif low > 1500:
-                    time.sleep((low - 1000) / 1e6)
-                while ns() < ende: pass
-                lg.gpio_write(h, GPIO, 1)
-                t1 = ns(); ist.append((t1 - t0) / 1000)
-                ende = t1 + high * 1000
-                if high > 1500:
-                    time.sleep((high - 1000) / 1e6)
-                while ns() < ende: pass
-            if abtasten:
-                lg.gpio_free(h, GPIO)
-                lg.gpio_claim_input(h, GPIO, lg.SET_PULL_UP)
-                self.abgetastet = self._abtasten(abtasten)
-        finally:
-            gc.enable()
-            if rt: self._rt(False)
-            self._eingang()
-        return ist
-
-    def _abtasten(self, bits):
-        """Antwort des CP1 durch Pegelabfrage messen (Flankenmeldungen gehen auf dem Pi Zero verloren).
-        -> Low-Längen in µs"""
-        lg, h = self.lg, self.h
-        ns = time.perf_counter_ns
-        ende = ns() + int((0.012 + bits * 0.0008) * 1e9)     # Bytes kommen je Interrupt, mit Pausen
-        lows = []; alt = 1; t_low = 0
-        while ns() < ende and len(lows) < bits:
-            v = lg.gpio_read(h, GPIO)
-            if v != alt:
-                t = ns()
-                if v == 0: t_low = t
-                else: lows.append((t - t_low) / 1000)
-                alt = v
-        return lows
+            print('Hinweis: kosmos_rc ohne Echtzeitpriorität – Übertragung unzuverlässig', flush=True)
 
     # ------------------------------------------------ Fernsteuerung
     def befehl(self, cmd, a, b, antwort=0):
@@ -193,7 +104,7 @@ class Leitung:
             bits = (antwort + 1) * 8
             lows = self._rc(rahmen(cmd, a, b).hex(), bits)
             if len(lows) < bits:
-                raise KeineAntwort(f'{len(lows)} von {bits} Bits – ist am CP1 „rc on“ (RUN 1 s halten)?')
+                raise KeineAntwort(f'{len(lows)} von {bits} Bits – läuft der CP1 mit Firmware 5.00?')
             werte = [1 if p < SCHWELLE_US else 0 for p in lows[:bits]]
             daten = [sum(b << i for i, b in enumerate(werte[j:j + 8])) for j in range(0, bits, 8)]
             chk = 0xA5
@@ -201,13 +112,6 @@ class Leitung:
             if chk != daten[-1]:
                 raise KeineAntwort('Prüfbyte falsch')
             return bytes(daten[:-1])
-
-    def _lows(self):
-        k = list(self.kanten); out = []
-        for (t1, l1), (t2, l2) in zip(k, k[1:]):
-            if l1 == 0 and l2 == 1:
-                out.append((t2 - t1) / 1000)
-        return out
 
     def status(self):
         """nur Anklopfen -> RAM 0x20..0x3A, ohne die Anzeige zu stören"""
@@ -218,7 +122,11 @@ class Leitung:
             if daten is not None:
                 return daten
             time.sleep(0.02)
-        raise KeineAntwort('keine Statusantwort – ist am CP1 „rc on“ (RUN 1 s halten)?')
+        raise KeineAntwort('keine Statusantwort – ist der CP1 an (Firmware 5.00)?')
+
+    def _fni_zeile(self, zeile):
+        self.rc.stdin.write(zeile + '\n')
+        return self.rc.stdout.readline().split()
 
     def _rc(self, auftrag, bits):
         self.rc.stdin.write(f'{auftrag} {bits}\n')
@@ -282,15 +190,26 @@ class Leitung:
                 time.sleep(0.02)
 
     def auftrag(self, job, werte=None, frist_s=8):
-        """Parameter schreiben, zuletzt F_JOB, dann CAL drücken und warten, bis F_JOB wieder 0 ist."""
+        """Parameter mit 03 schreiben, Auftrag mit 04 starten, warten bis F_JOB wieder 0 ist."""
         with self.lock:
             return self._auftrag(job, werte, frist_s)
 
-    def _auftrag(self, job, werte, frist_s):
+    def _starten(self, job, werte):
         for adr, w in (werte or {}).items():
             self.schreib(adr, w)
-        self.schreib(F_JOB, job)
-        self.taste('cal')
+        for v in range(VERSUCHE):
+            try:
+                r = self.befehl(4, job, 0, antwort=1)[0]
+                break
+            except KeineAntwort:
+                if v == VERSUCHE - 1: raise
+                time.sleep(0.05)
+                if self.ram(F_JOB, 1)[0] == job: return     # Antwort verloren, Auftrag aber angenommen
+        if r != job:
+            raise FlashFehler('der CP1 nimmt keinen Auftrag an – läuft gerade ein Programm oder eine Eingabe? (erst STP)')
+
+    def _auftrag(self, job, werte, frist_s):
+        self._starten(job, werte)
         ende = time.monotonic() + frist_s
         while time.monotonic() < ende:
             time.sleep(0.15)
@@ -299,13 +218,75 @@ class Leitung:
             except KeineAntwort:
                 pass
         else:
-            self.schreib(F_JOB, 0)
-            raise FlashFehler('der CP1 hat den Auftrag nicht angenommen – läuft gerade ein Programm? (erst STP)')
+            raise FlashFehler('Auftrag nicht fertig geworden')
         text = self.anzeige()['text']
         if text.startswith('F'):
             nr = int(text[-3:]) if text[-3:].isdigit() else 0
             raise FlashFehler({10: 'F-010: kein Flash gefunden', 11: 'F-011: Bank ist leer',
                                3: 'F-003: Bank/Bereich ungültig', 1: 'F-001'}.get(nr, f'Fehler {text}'))
+
+    # ------------------------------------------------ FNI (Interrupt des CP1 aus, getaktet)
+    def fni(self, job, anf, anz, bank=0, daten=b'', start=255, name=None, versuche=3):
+        """Großer Block: job $20..$26. anz = Zellen (256 -> 0). -> empfangene Bytes (2 je Zelle, bei $25 + Bankkopf,
+        bei $26 je Bank 18 Byte: Bank, 0, Name)"""
+        n = anz & 0xFF
+        werte = {F_BANK: bank, F_ANF: anf & 0xFF, F_ANZ: n, F_START: start & 0xFF}
+        if name is not None:
+            werte.update({F_NAME + i: c for i, c in enumerate(name.encode('latin-1', 'replace')[:16].ljust(16, b' '))})
+        richtung = {0x20: 'E', 0x22: 'E', 0x23: 'E', 0x25: 'K', 0x26: 'N'}.get(job, 'A')
+        kopf = bytes([job, bank, anf & 0xFF, n]).hex()
+        letzter = ''
+        with self.lock:
+            for v in range(versuche):
+                self.schreib(F_JOB, 0)                          # alter Stand ($EE) darf nicht als Ablehnung gelten
+                for adr, w in werte.items():
+                    self.schreib(adr, w)
+                self._rc(rahmen(4, job, 0).hex(), 0)            # Attention; die Annahme ist „T geht low“
+                antwort = self._fni_zeile(f'F {richtung} {anf & 0xFF} {n} {kopf} {daten.hex() if richtung == "E" else ""}')
+                time.sleep(0.05)
+                job_jetzt = None
+                for _ in range(20):
+                    try:
+                        job_jetzt = self.ram(F_JOB, 1)[0]
+                        if job_jetzt in (0, 0xEE): break        # antwortet erst wieder, wenn der CP1 FNI verlassen hat
+                    except KeineAntwort:
+                        pass
+                    time.sleep(0.1)
+                if antwort[:1] == ['OK'] and job_jetzt == 0:
+                    return bytes.fromhex(antwort[1]) if len(antwort) > 1 else b''
+                letzter = ' '.join(antwort[1:]) or '?'
+                if letzter == 'nicht_angenommen' and job_jetzt not in (job, 0xEE):
+                    raise FlashFehler('der CP1 nimmt keinen Auftrag an – läuft gerade ein Programm oder eine Eingabe? (erst STP)')
+                if letzter == 'nicht_angenommen' and job_jetzt == 0xEE:
+                    raise FlashFehler('der CP1 lehnt ab: Bereich/Bank ungültig oder kein Flash')
+                time.sleep(0.3)
+        raise KeineAntwort(f'FNI fehlgeschlagen ({letzter})')
+
+    def zellen_lesen(self, von, anzahl):
+        """NIE 05/06: Zellen lesen, auch während ein Programm läuft -> {n: (befehl, argument)}"""
+        out = {}
+        n = von
+        while n < von + anzahl:
+            chip, basis = (6, 128) if n >= 128 else (5, 0)
+            k = min(von + anzahl, basis + 128, n + 32) - n
+            for v in range(VERSUCHE):
+                try:
+                    d = self.befehl(chip, 2 * (n - basis), 2 * k, antwort=2 * k); break
+                except KeineAntwort:
+                    if v == VERSUCHE - 1: raise
+            for i in range(k): out[n + i] = (d[2 * i], d[2 * i + 1])
+            n += k
+        return out
+
+    def zelle_schreiben(self, n, befehl_, argument):
+        """NIE 07/08: Zelle n = befehl.argument (auch während ein Programm läuft)"""
+        chip, basis = (8, 128) if n >= 128 else (7, 0)
+        for adr, w in ((2 * (n - basis), befehl_), (2 * (n - basis) + 1, argument)):
+            for v in range(VERSUCHE):
+                try:
+                    self.befehl(chip, adr, w & 0xFF); break
+                except KeineAntwort:
+                    if v == VERSUCHE - 1: raise
 
     def flash_lies(self, bank, sektor, ofs):
         """16 Byte roh aus dem Flash"""
@@ -313,27 +294,15 @@ class Leitung:
         return self.ram(F_NAME, 16)
 
     def flash_verzeichnis(self):
-        """-> {'autoboot': n, 'baenke': [{'bank', 'name', 'start'}]}"""
-        gefunden, b = [], 0
-        while b <= 255:
-            self.auftrag(0x10, {F_BANK: b})
-            bank, sektor = self.ram(F_BANK, 2)
-            if sektor & 0x80: break
-            gefunden.append((bank, sektor, name_text(self.ram(F_NAME, 16))))
-            if bank == 255: break
-            b = bank + 1
-        verz = {}
-        if gefunden and gefunden[0][0] == 0:
-            s0 = gefunden[0][1]
-            for bank, _, _ in gefunden:
-                stueck = (2 * bank) & ~15
-                if stueck not in verz:
-                    verz[stueck] = self.flash_lies(0, s0, stueck)
-        def zelle(n):
-            st = (2 * n) & ~15
-            return verz[st][(2 * n) - st: (2 * n) - st + 2] if st in verz else b'\0\0'
-        return {'autoboot': zelle(0)[1] if verz else 0,
-                'baenke': [{'bank': bank, 'name': name, 'start': zelle(bank)[1]} for bank, _, name in gefunden if bank]}
+        """-> {'autoboot': n, 'baenke': [{'bank', 'name', 'start'}]}: Bank 0 per FNI + alle Namen per FNI"""
+        with self.lock:
+            verz = self.fni(0x24, 0, 0, bank=0)           # Bank 0: Zelle 0 = Autoboot, Zelle n = Start von Bank n
+            namen = self.fni(0x26, 0, 0)
+        baenke = []
+        for i in range(0, len(namen), 18):
+            b = namen[i]
+            baenke.append({'bank': b, 'name': name_text(namen[i + 2:i + 18]), 'start': verz[2 * b + 1]})
+        return {'autoboot': verz[1], 'baenke': baenke}
 
     def flash_speichern(self, bank, name='', start=None):
         werte = {F_NAME + i: c for i, c in enumerate(name.encode('latin-1', 'replace')[:16].ljust(16, b' '))}
@@ -347,66 +316,45 @@ class Leitung:
     def flash_autoboot(self, bank):
         self.auftrag(0x08, {F_BANK: bank}, frist_s=10)
 
-    # ------------------------------------------------ Kassette aus der Ferne
-    def laden(self, zellen, von=None, bis=None, versuche=3):
-        """CAL drücken, senden, auf rdY prüfen. Die Leitung bleibt dabei die ganze Zeit belegt: eine
-        Statusabfrage (3,5 ms low) zwischen CAL und den Daten hält der CP1 für ein kaputtes erstes Bit (Su Err)."""
-        daten = ks.rahmen_bauen(zellen, von, bis)
+    # ------------------------------------------------ Programm-RAM und Bänke über FNI
+    @staticmethod
+    def _bytes(zellen, von, bis):
+        return b''.join(bytes(zellen.get(i, (0, 0))) for i in range(von, bis + 1))
+
+    @staticmethod
+    def _zellen(daten, von):
+        return {von + i: (daten[2 * i], daten[2 * i + 1]) for i in range(len(daten) // 2)}
+
+    def laden(self, zellen, von=None, bis=None):
+        """Zellen ins RAM des CP1 (FNI $20); Lücken = 00.000"""
+        von = min(zellen) if von is None else von
+        bis = max(zellen) if bis is None else bis
+        self.fni(0x20, von, bis - von + 1, daten=self._bytes(zellen, von, bis))
+        return {'von': von, 'bis': bis, 'bytes': 2 * (bis - von + 1)}
+
+    def speichern(self, von=None, bis=None):
+        """RAM des CP1 lesen (FNI $21) -> {n: (befehl, argument)}"""
         with self.lock:
-            for v in range(versuche):
-                self.taste('cal')
-                time.sleep(0.3)
-                ist = self._pulse(ks.pulsplan(daten), schlaf_ok=True)
-                ende = time.monotonic() + 2
-                anz = b''
-                while time.monotonic() < ende:
-                    time.sleep(0.1)
-                    try:
-                        anz = self.status()[0:6]
-                    except KeineAntwort:
-                        continue
-                    if anz[3:6] == bytes([0x50, 0x5e, 0x6e]) or anz[1:3] == bytes([0x6d, 0x1c]):
-                        break                       # rdY bzw. Su (Err)
-                if anz[3:6] == bytes([0x50, 0x5e, 0x6e]):
-                    return {'von': daten[1], 'bis': daten[2], 'bytes': len(daten), 'versuch': v + 1,
-                            'kurz': [round(min(ist)), round(max(i for i in ist if i < 800))]}
-                time.sleep(0.3)
-            raise KeineAntwort(f'CP1 meldet nach {versuche} Versuchen kein rdY („{segtext(anz)}“)')
+            if von is None: von = 0
+            if bis is None: bis = self.ram(MEM_SIZE, 1)[0]
+            return self._zellen(self.fni(0x21, von, bis - von + 1), von)
 
-    def speichern(self, von=None, bis=None, warte_s=40):
-        with self.lock:                             # keine Statusabfrage zwischen CAS und den Daten
-            return self._speichern(von, bis, warte_s)
+    def bank_sichern(self, bank, von=0, bis=255):
+        """Bank direkt aus dem Flash; das RAM des CP1 bleibt unberührt. Ganze Bank: Komplettdump ($25) mit Name.
+        -> (zellen, name)"""
+        if (von, bis) == (0, 255):
+            d = self.fni(0x25, 0, 0, bank=bank)
+            return self._zellen(d[:512], 0), name_text(d[512:528])
+        return self._zellen(self.fni(0x24, von, bis - von + 1, bank=bank), von), None
 
-    def _speichern(self, von, bis, warte_s):
-        if von is None:
-            self.taste('cas')
-        else:
-            self.taste('cas', 1300)
-            time.sleep(0.3)
-            self.tasten(list(f'{von:03d}') + ['cas'] + list(f'{bis:03d}'))
-            self.kanten.clear()
-            self.taste('cas')
-        with self.lock:
-            self.kanten.clear()
-            frist = time.monotonic() + warte_s
-            while not self.kanten and time.monotonic() < frist:
-                time.sleep(0.05)
-            if not self.kanten:
-                raise KeineAntwort('CP1 sendet nicht')
-            letzte = (len(self.kanten), time.monotonic())
-            while True:
-                time.sleep(0.1)
-                daten = ks.bytes_aus_pulsen(ks.lowpulse(list(self.kanten)))
-                n = ks.rahmen_laenge(daten)
-                if n and len(daten) >= n: break
-                if len(self.kanten) != letzte[0]:
-                    letzte = (len(self.kanten), time.monotonic())
-                elif time.monotonic() - letzte[1] > 1.0:
-                    break
-        return ks.rahmen_lesen(daten)
+    def bank_einspielen(self, bank, zellen, name=None, start=None):
+        """Zellen direkt in eine Bank (FNI $22/$23); Rest der Bank bleibt; start != None -> Verzeichnis"""
+        if not 1 <= bank <= 255: raise ValueError('Bank 1..255')
+        von, bis = min(zellen), max(zellen)
+        self.fni(0x23 if name is not None else 0x22, von, bis - von + 1, bank=bank,
+                 daten=self._bytes(zellen, von, bis), start=255 if start is None else start, name=name)
+        return {'bank': bank, 'von': von, 'bis': bis}
 
-
-# ---------------------------------------------------------------- Server
 
 def disasm(zellen):
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as f:
@@ -495,6 +443,23 @@ def serve(port):
                     return self.antwort(200, {'ok': True})
                 if self.path == '/api/ram':
                     return self.antwort(200, {'daten': list(leitung.ram(int(req['adr']), int(req['n'])))})
+                if self.path == '/api/zellen':
+                    z = leitung.zellen_lesen(int(req['von']), int(req.get('anzahl', 1)))
+                    return self.antwort(200, {'zellen': {f'{k:03d}': list(v) for k, v in z.items()}})
+                if self.path == '/api/zelle':
+                    leitung.zelle_schreiben(int(req['zelle']), int(req['befehl']), int(req['argument']))
+                    return self.antwort(200, {'ok': True})
+                if self.path == '/api/bank/sichern':
+                    b = int(req['bank'])
+                    z, name = leitung.bank_sichern(b)
+                    return self.antwort(200, {'bank': b, 'name': name, 'zellen': {f'{k:03d}': list(v) for k, v in z.items()},
+                                              'listing': disasm(z)})
+                if self.path == '/api/bank/einspielen':
+                    z = {int(k): tuple(v) for k, v in req['zellen'].items()}
+                    st = req.get('start')
+                    r = leitung.bank_einspielen(int(req['bank']), z, req.get('name') or None,
+                                                None if st in (None, '') else int(st) & 255)
+                    return self.antwort(200, r)
                 return self.antwort(404, {'fehler': 'unbekannt'})
             except (KeineAntwort, FlashFehler) as e:
                 return self.antwort(503, {'fehler': str(e)})
@@ -548,6 +513,33 @@ def main(argv):
         else:
             r = Leitung().laden({i: z.get(i, (0, 0)) for i in range(min(z), max(z) + 1)})
         print(f"geladen: Zellen {r['von']:03d}–{r['bis']:03d}"); return 0
+    if cmd == 'zelle':
+        n = int(rest[0])
+        if len(rest) >= 3:
+            obj = {'zelle': n, 'befehl': int(rest[1]), 'argument': int(rest[2])}
+            if srv: ueber_server('/api/zelle', obj, port=port)
+            else: Leitung().zelle_schreiben(n, obj['befehl'], obj['argument'])
+            print(f"Zelle {n:03d} = {obj['befehl']:02d}.{obj['argument']:03d}"); return 0
+        z = ueber_server('/api/zellen', {'von': n, 'anzahl': 1}, port=port)['zellen'] if srv else \
+            {f'{k:03d}': list(v) for k, v in Leitung().zellen_lesen(n, 1).items()}
+        b, a = z[f'{n:03d}']
+        print(f'Zelle {n:03d} = {b:02d}.{a:03d}'); return 0
+    if cmd == 'bank-sichern':
+        b = int(rest[0])
+        if srv:
+            r = ueber_server('/api/bank/sichern', {'bank': b}, port=port)
+            z, name = {int(k): tuple(v) for k, v in r['zellen'].items()}, r.get('name')
+        else: z, name = Leitung().bank_sichern(b)
+        ks.json_schreiben(rest[1], z)
+        print(f'Bank {b:03d}' + (f' „{name}“' if name else '') + f' -> {rest[1]}'); return 0
+    if cmd == 'bank-einspielen':
+        b = int(rest[0]); z = ks.json_lesen(rest[1])
+        st = int(rest[rest.index('--start') + 1]) if '--start' in rest else None
+        name = next((a for a in rest[2:] if a != '--start' and a != str(st)), None)
+        obj = {'bank': b, 'zellen': {f'{k:03d}': list(v) for k, v in z.items()}, 'name': name, 'start': st}
+        if srv: ueber_server('/api/bank/einspielen', obj, port=port)
+        else: Leitung().bank_einspielen(b, z, name, st)
+        print(f'{rest[1]} -> Bank {b:03d}'); return 0
     if cmd == 'speichern':
         von = int(rest[rest.index('--von') + 1]) if '--von' in rest else None
         bis = int(rest[rest.index('--bis') + 1]) if '--bis' in rest else None
@@ -584,15 +576,20 @@ def main(argv):
     print(__doc__); return 1
 
 
-if __name__ == '__main__':
+def cli(argv):
+    """main() mit lesbaren Fehlermeldungen (auch für kosmos_send.py / kosmos_recv.py)"""
+    import urllib.error
     try:
-        sys.exit(main(sys.argv[1:]))
+        return main(argv)
     except KeineAntwort as e:
-        print('Keine Antwort vom CP1:', e); sys.exit(2)
+        print('Keine Antwort vom CP1:', e); return 2
     except FlashFehler as e:
-        print('Flash:', e); sys.exit(3)
-    except Exception as e:                      # Fehler vom Server (HTTP 503 mit Text)
-        import urllib.error
-        if isinstance(e, urllib.error.HTTPError):
-            print('Fehler:', json.loads(e.read() or b'{}').get('fehler', e)); sys.exit(2)
-        raise
+        print('Flash:', e); return 3
+    except urllib.error.HTTPError as e:
+        try: print('Fehler:', json.load(e)['fehler'])
+        except Exception: print('Server:', e)
+        return 2
+
+
+if __name__ == '__main__':
+    sys.exit(cli(sys.argv[1:]))
