@@ -106,12 +106,13 @@ $valarg = array("LDA","ABS","ADD","SUB","VGL","VGR","VKL","UND","ODR","AS1","AS2
 $adrarg = array("LIA","AIS","SIU");
 
 
-if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] [-o] filename.json\n       -c show code\n       -d show description\n       -i show inline numerics\n       -o create filename.koa\n");
+if ($argc < 2) die("Usage: $argv[0] [-i] [-c] [-d] [-o] [-n names.txt] filename.json\n       -c show code\n       -d show description\n       -i show inline numerics\n       -o create filename.koa\n       -n name table: lines \"035=display_loop\" (labels instead of label_N/wert_N)\n");
 
 $beauty = "STANDARD";
 $showdesc = false;
 $showcode = false;
 $output = false;
+$names = array();
 
 $carg = array_shift($argv);
 
@@ -120,6 +121,15 @@ while ($carg = array_shift($argv)){
   if ($carg == "-d") $showdesc = true; else
   if ($carg == "-c") $showcode = true; else
   if ($carg == "-o") $output = true; else
+  if ($carg == "-n") {
+    $nf = array_shift($argv);
+    if (!file_exists($nf)) die("ERROR: Name table $nf not found.\n");
+    foreach (file($nf) as $nl) {
+      if (!preg_match('/^\s*(\d{1,3})\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/', $nl, $m)) continue;
+      if ((int)$m[1] > 255) continue;
+      $names[str_pad((int)$m[1], 3, "0", STR_PAD_LEFT)] = $m[2];
+    }
+  } else
   $fn = $carg;
 }
 
@@ -179,6 +189,7 @@ foreach ($in as $line => $c){
 ksort($labels);
 $nr = 1;
 foreach ($labels as $k=>$v){
+  if (isset($names[$k])) { $labels[$k] = $names[$k]; continue; }
   $labels[$k] = $v."$nr";
   $nr++;
 }
@@ -187,6 +198,7 @@ ksort($values);
 $vnr = 1;
 $anr = 1;
 foreach ($values as $k=>$v){
+  if (isset($names[$k])) { $values[$k] = $names[$k]; continue; }
   if (substr($v,0,1) == "a"){
     $values[$k] = $v."$anr";
     $anr++;
@@ -234,10 +246,14 @@ foreach ($in as $line => $c){
     if (!$has_line) $bline = "    ";  
     if ($has_label) $arg = $has_label;
     if (in_array($co,$noarg)) $arg = "";
-    if (isset($labels[$lines]))  $btfy[] = "\n>".$labels[$lines].":";
-    if (isset($values[$lines]))  $btfy[] = "\n>".$values[$lines].":";
-    if (($c1>0) || ($c2>0) || array_key_exists($line,$labels) ||  array_key_exists($line,$values)){
-      if ($has_line) $btfy[] = "";
+    // Marken mit Zeilennummer (nur zur Ansicht; der Assembler ignoriert sie und setzt sie mit -r neu)
+    $marken = array();
+    if (isset($names[$lines])) $marken[] = $names[$lines];
+    if (isset($labels[$lines])) $marken[] = $labels[$lines];
+    if (isset($values[$lines])) $marken[] = $values[$lines];
+    foreach (array_unique($marken) as $mk) $btfy[] = "\n".str_pad(">$mk:", 28)."$lines";
+    if (($c1>0) || ($c2>0) || array_key_exists($line,$labels) ||  array_key_exists($line,$values) || isset($names[$lines])){
+      if ($has_line && !$marken) $btfy[] = "";
       $btfy[] = str_pad("  $bline$co $arg ",30)."$code  $dsc";
       $lastline = $line;
     }

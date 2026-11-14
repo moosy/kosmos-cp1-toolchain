@@ -158,7 +158,7 @@ for ($rounds=0; $rounds<2; $rounds++){ # two identical runs for labels
   }
 
   $lastline = -1;
-  $mustsetlabel = false;
+  $mustsetlabel = array();
   $commentblock = false;
 
   foreach ($in as $l){
@@ -197,8 +197,8 @@ for ($rounds=0; $rounds<2; $rounds++){ # two identical runs for labels
 
       
       if (substr($line,0,1) == ">") {  # Label
-        $btfy[] = "\n".$line.":";
-        $mustsetlabel = substr($line,1);
+        $btfy[] = "\n".$line.":";             # Zeilennummer setzt der nächste Befehl ein (Relabel)
+        $mustsetlabel[] = array(substr($line,1), count($btfy) - 1);
         continue;
       }
 
@@ -225,10 +225,11 @@ for ($rounds=0; $rounds<2; $rounds++){ # two identical runs for labels
     $out[$line] = array((int)$c1,(int)$c2);
     $filled[(int)$line] = true;
 
-    if ($mustsetlabel){
-      $labels[$mustsetlabel] = $line;
-      $mustsetlabel = false;
+    foreach ($mustsetlabel as $ml){
+      $labels[$ml[0]] = $line;
+      $btfy[$ml[1]] = "\n".str_pad(">".$ml[0].":", 28).$line;
     }
+    $mustsetlabel = array();
  
     $c2 = str_pad($c2, 3, "0", STR_PAD_LEFT);
     $dsc = "";

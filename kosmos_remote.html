@@ -57,6 +57,9 @@
   .klein { font-size: 12px; color: var(--grau); }
   input[type=text] { width: 190px; }
   .panel.breit { grid-column: 1 / -1; }
+  .editor { display: grid; grid-template-columns: 1fr 220px; gap: 12px; margin-top: 10px; }
+  .editor textarea { min-height: 420px; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 4; }
+  @media (max-width: 720px) { .editor { grid-template-columns: 1fr; } .editor textarea { min-height: 260px; } }
   table.verz { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; font-size: 14px; }
   table.verz th { text-align: left; color: var(--grau); font-weight: 500; font-size: 12.5px; padding: 4px 6px; border-bottom: 1px solid #3d4642; }
   table.verz td { padding: 5px 6px; border-bottom: 1px solid #333b38; }
@@ -109,29 +112,34 @@
   </section>
 
   <div class="panele">
-    <section class="panel">
-      <h2>Programm laden</h2>
-      <label for="quelle">Quelltext für den Assembler, oder eine .json-Datei wählen</label>
-      <textarea id="quelle" spellcheck="false" placeholder="AKO 123&#10;ANZ&#10;HLT"></textarea>
-      <div class="knoepfe">
-        <button class="b" id="ladenQ">Assemblieren und laden</button>
-        <label class="b zweit" style="cursor:pointer">JSON laden …<input type="file" id="datei" accept=".json" hidden></label>
-      </div>
-      <div class="meldung" id="ladenM"></div>
-    </section>
-    <section class="panel">
-      <h2>Speicher holen</h2>
-      <div class="knoepfe">
-        <button class="b" id="holenAlles">Alles</button>
+    <section class="panel breit">
+      <h2>Programm <span class="klein">· holen, ändern, zurückspielen</span></h2>
+      <div class="knoepfe" style="margin-top:0">
+        <button class="b zweit" id="holenAlles">Aus CP1 holen</button>
         <span class="klein">oder Zellen</span>
         <input type="number" id="von" min="0" max="255" value="0" aria-label="von">
         <span class="klein">bis</span>
         <input type="number" id="bis" min="0" max="255" value="127" aria-label="bis">
-        <button class="b zweit" id="holenTeil">Bereich</button>
+        <button class="b zweit" id="holenTeil">Bereich holen</button>
+        <label class="b zweit" style="cursor:pointer">Datei öffnen …<input type="file" id="datei" accept=".koa,.json,.txt" hidden></label>
       </div>
-      <div class="meldung" id="holenM"></div>
-      <pre id="listing" hidden></pre>
-      <div class="knoepfe"><button class="b zweit" id="download" hidden>Als JSON sichern</button></div>
+      <div class="editor">
+        <div>
+          <label for="quelle">Quelltext (Marken mit Zeilennummer; die Nummern setzt „Assemblieren“ neu)</label>
+          <textarea id="quelle" spellcheck="false" placeholder=">start:&#10;  AKO 123&#10;  ANZ&#10;  HLT"></textarea>
+        </div>
+        <div>
+          <label for="namen">Namen (Adresse=Name)</label>
+          <textarea id="namen" spellcheck="false" placeholder="035=display_loop&#10;134=punkte"></textarea>
+        </div>
+      </div>
+      <div class="knoepfe">
+        <button class="b zweit" id="assemblieren">Assemblieren</button>
+        <button class="b" id="ladenQ">In CP1 laden</button>
+        <button class="b zweit" id="alsKoa">Als .koa sichern</button>
+        <button class="b zweit" id="alsJson">Als .json sichern</button>
+      </div>
+      <div class="meldung" id="ladenM"></div>
     </section>
     <section class="panel breit">
       <h2>Flash <span class="klein">· Firmware 5.x, nur wenn kein Programm läuft</span></h2>
@@ -145,13 +153,13 @@
         <tbody></tbody>
       </table>
       <div class="knoepfe" style="margin-top:14px">
-        <span class="klein">RAM speichern in Bank</span>
+        <span class="klein">In Bank</span>
         <input type="number" id="fBank" min="1" max="255" value="1" aria-label="Bank">
         <input type="text" id="fName" maxlength="16" placeholder="Name (16 Zeichen)" aria-label="Name">
         <span class="klein">Start</span>
         <input type="number" id="fStart" min="0" max="255" placeholder="PC" aria-label="Startadresse">
-        <button class="b" id="fSpeichern">RAM speichern</button>
-        <label class="b zweit" style="cursor:pointer" title="Zellen aus einer .json-Datei direkt in die Bank schreiben, das RAM bleibt unberührt">JSON einspielen …<input type="file" id="fDatei" accept=".json" hidden></label>
+        <button class="b" id="fSpeichern" title="Inhalt des CP1-RAM in die Bank (Start leer = PC)">RAM speichern</button>
+        <button class="b zweit" id="fEditor" title="Programm aus dem Editor assemblieren und mit den Namen direkt in die Bank schreiben, das RAM bleibt unberührt">Editor speichern</button>
       </div>
       <div class="meldung" id="flashM"></div>
     </section>
@@ -292,39 +300,69 @@ async function lange(knopf, meldung, f) {
   catch (e) { meldung.textContent = e.message; meldung.style.color = 'var(--schlecht)'; }
   finally { knopf.disabled = false; beschaeftigt--; abfragen(); }
 }
+// ---- Editor: ein Quelltext-Fenster + Namen (Adresse=Name); Entwurf bleibt im Browser
+const ed = $('#quelle'), nm = $('#namen');
+let progName = 'cp1', assembliert = null;
+try { ed.value = localStorage.getItem('cp1-quelle') || ''; nm.value = localStorage.getItem('cp1-namen') || ''; } catch (e) {}
+function merken() { try { localStorage.setItem('cp1-quelle', ed.value); localStorage.setItem('cp1-namen', nm.value); } catch (e) {} }
+ed.oninput = nm.oninput = () => { assembliert = null; merken(); };
+function insEditor(listing, name) {
+  ed.value = listing.replace(/^\n+/, ''); progName = name; assembliert = null; merken();
+}
+async function assemble() {
+  const r = await api('/api/assemblieren', { quelltext: ed.value, namen: nm.value });
+  const pos = ed.selectionStart;
+  ed.value = r.quelltext; nm.value = r.namen; ed.selectionStart = ed.selectionEnd = pos; merken();
+  assembliert = r;
+  return r;
+}
+$('#assemblieren').onclick = () => lange($('#assemblieren'), $('#ladenM'), async () => {
+  const r = await assemble(); return `ok: Zellen 000–${drei(r.bis)}, Zeilennummern und Namen aktualisiert`;
+});
 $('#ladenQ').onclick = () => lange($('#ladenQ'), $('#ladenM'), async () => {
-  const r = await api('/api/laden', { quelltext: $('#quelle').value });
-  return `geladen: Zellen ${String(r.von).padStart(3, '0')}–${String(r.bis).padStart(3, '0')} (${r.bytes} Byte)`;
+  const a = await assemble();
+  const zellen = Object.fromEntries(Object.entries(a.zellen).filter(([k]) => +k <= a.bis));
+  const r = await api('/api/laden', { zellen });
+  return `in den CP1 geladen: Zellen ${drei(r.von)}–${drei(r.bis)}`;
+});
+function herunterladen(text, endung, typ) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: typ }));
+  a.download = progName + endung; a.click();
+}
+$('#alsKoa').onclick = () => herunterladen(ed.value.replace(/\s*$/, '\n') +
+  (nm.value.trim() ? '\n// Namen\n' + nm.value.trim().split('\n').map(z => '// ' + z).join('\n') + '\n' : ''), '.koa', 'text/plain');
+$('#alsJson').onclick = () => lange($('#alsJson'), $('#ladenM'), async () => {
+  const a = await assemble();
+  herunterladen(JSON.stringify(a.zellen), '.json', 'application/json');
+  return `${progName}.json gesichert`;
 });
 $('#datei').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
-  lange($('#ladenQ'), $('#ladenM'), async () => {
-    const zellen = JSON.parse(await f.text());
-    const r = await api('/api/laden', { zellen });
-    e.target.value = '';
-    return `${f.name}: Zellen ${String(r.von).padStart(3, '0')}–${String(r.bis).padStart(3, '0')} geladen`;
+  e.target.value = '';
+  lange($('#holenAlles'), $('#ladenM'), async () => {
+    const text = await f.text(), name = f.name.replace(/\.[^.]*$/, '');
+    if (/\.json$/i.test(f.name)) {
+      const r = await api('/api/disasm', { zellen: JSON.parse(text), namen: nm.value });
+      insEditor(r.listing, name);
+    } else {
+      const namen = [...text.matchAll(/^\/\/ (\d{1,3}=\w+)\s*$/gm)].map(m => m[1]);   // von „Als .koa sichern“
+      if (namen.length) nm.value = namen.join('\n') + '\n';
+      insEditor(text.replace(/\n*\/\/ Namen\n(\/\/ \d{1,3}=\w+\s*\n?)*\s*$/, '\n'), name);
+    }
+    return `${f.name} geöffnet`;
   });
 };
-let geholt = null, geholtName = 'cp1';
-function zeigeGeholt(r, name) {
-  geholt = r.zellen; geholtName = name;
-  const l = $('#listing'); l.textContent = r.listing || JSON.stringify(r.zellen); l.hidden = false;
-  $('#download').hidden = false;
-  const k = Object.keys(r.zellen).sort((a, b) => a - b);   // „100“ käme sonst vor „000“
-  $('#holenM').style.color = 'var(--gut)';
-  $('#holenM').textContent = `${name.startsWith('bank') ? 'Bank ' + name.slice(4, 7) + ': ' : ''}Zellen ${k[0]}–${k[k.length - 1]} geholt, Prüfsumme ok`;
-  return $('#holenM').textContent;
-}
 function holen(knopf, obj) {
-  lange(knopf, $('#holenM'), async () => zeigeGeholt(await api('/api/speichern', obj), 'cp1'));
+  lange(knopf, $('#ladenM'), async () => {
+    const r = await api('/api/speichern', { ...obj, namen: nm.value });
+    const k = Object.keys(r.zellen).sort((a, b) => a - b);
+    insEditor(r.listing, 'cp1-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-'));
+    return `aus dem CP1 geholt: Zellen ${k[0]}–${k[k.length - 1]}`;
+  });
 }
 $('#holenAlles').onclick = () => holen($('#holenAlles'), {});
 $('#holenTeil').onclick = () => holen($('#holenTeil'), { von: +$('#von').value, bis: +$('#bis').value });
-$('#download').onclick = () => {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(geholt)], { type: 'application/json' }));
-  a.download = geholtName + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.json'; a.click();
-};
 // ---- Flash
 const drei = n => String(n).padStart(3, '0');
 let verzeichnis = null;
@@ -336,15 +374,17 @@ function zeigeVerz(v) {
     const auto = v.autoboot === e.bank;
     tr.innerHTML = `<td>${drei(e.bank)}${auto ? ' <span class="stern" title="Autoboot">★</span>' : ''}</td><td></td>` +
       `<td class="start">${drei(e.start)}</td><td class="knopf"><button class="b" data-a="laden">Laden</button> ` +
-      `<button class="b zweit" data-a="sichern" title="Bank direkt aus dem Flash holen (RAM bleibt)">Sichern</button> ` +
+      `<button class="b zweit" data-a="sichern" title="Bank direkt aus dem Flash in den Editor holen (RAM bleibt)">In Editor</button> ` +
       `<button class="b zweit" data-a="auto"${auto ? ' disabled' : ''}>Autoboot</button></td>`;
     tr.children[1].textContent = e.name || '–';
     tr.querySelector('[data-a=laden]').onclick = ev => flashTat(ev.target, '/api/flash/laden', { bank: e.bank },
       `Bank ${drei(e.bank)} geladen, PC = ${drei(e.start)} · RUN startet`, false);
     tr.querySelector('[data-a=sichern]').onclick = ev => lange(ev.target, $('#flashM'), async () => {
-      const r = await api('/api/bank/sichern', { bank: e.bank });
-      zeigeGeholt(r, `bank${drei(e.bank)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
-      return `Bank ${drei(e.bank)}${r.name ? ' „' + r.name.trim() + '“' : ''} geholt – Listing und JSON oben unter „Speicher holen“`;
+      const r = await api('/api/bank/sichern', { bank: e.bank, namen: nm.value });
+      if (r.namen_aus_bank) nm.value = r.namen;
+      insEditor(r.listing, `bank${drei(e.bank)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
+      $('#fBank').value = e.bank; $('#fBank').dataset.angefasst = 1; $('#fName').value = (r.name || '').trim();
+      return `Bank ${drei(e.bank)}${r.name ? ' „' + r.name.trim() + '“' : ''} im Editor (RAM unberührt)`;
     });
     tr.querySelector('[data-a=auto]').onclick = ev => flashTat(ev.target, '/api/flash/autoboot', { bank: e.bank },
       `Autoboot: Bank ${drei(e.bank)}`, true);
@@ -377,17 +417,18 @@ $('#fSpeichern').onclick = () => {
   flashTat($('#fSpeichern'), '/api/flash/speichern', { bank, name, start: start === '' ? null : +start },
     `RAM in Bank ${drei(bank)} gespeichert`, true);
 };
-$('#fDatei').onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
+$('#fEditor').onclick = () => {
   const bank = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
-  e.target.value = '';
   if (!(bank >= 1 && bank <= 255)) { $('#flashM').textContent = 'Bank 1..255'; return; }
-  if (verzeichnis?.baenke.some(x => x.bank === bank) && !confirm(`Zellen aus ${f.name} in Bank ${drei(bank)} schreiben? Zellen außerhalb der Datei bleiben.`)) return;
-  lange($('#fSpeichern'), $('#flashM'), async () => {
-    const zellen = JSON.parse(await f.text());
-    const r = await api('/api/bank/einspielen', { bank, zellen, name: name || null, start: start === '' ? null : +start });
-    if (start !== '' || name) zeigeVerz(await api('/api/flash'));
-    return `${f.name} -> Bank ${drei(bank)}, Zellen ${drei(r.von)}–${drei(r.bis)} (RAM unberührt)`;
+  const da = verzeichnis?.baenke.find(x => x.bank === bank);
+  if (da && !confirm(`Bank ${drei(bank)}${da.name ? ' „' + da.name + '“' : ''} mit dem Editor-Programm überschreiben?`)) return;
+  lange($('#fEditor'), $('#flashM'), async () => {
+    const a = await assemble();
+    const st = start !== '' ? +start : (da ? null : 0);            // leer: bestehender Start bleibt, neue Bank 0
+    await api('/api/bank/einspielen', { bank, zellen: a.zellen, name: name || null, start: st, namen: a.namen });
+    zeigeVerz(await api('/api/flash'));
+    const n = a.namen.trim() ? a.namen.trim().split('\n').length : 0;
+    return `Editor -> Bank ${drei(bank)} (alle 256 Zellen${n ? ', ' + n + ' Namen' : ''}, RAM unberührt)`;
   });
 };
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fernsteuerung für den Kosmos CP1, Firmware 5.02: GPIO 26 <-> P1.7 (Klemme 8), GPIO 19 <-> P1.6 (Klemme 7).
+"""Fernsteuerung für den Kosmos CP1, Firmware 5.03: GPIO 26 <-> P1.7 (Klemme 8), GPIO 19 <-> P1.6 (Klemme 7).
 
 Die Fernsteuerung ist immer an. Befehle:
 
@@ -14,8 +14,9 @@ Die Fernsteuerung ist immer an. Befehle:
   kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   RAM des CP1 nach Bank 12
   kosmos_remote.py flash-laden 12            Bank 12 ins RAM, PC = Start
   kosmos_remote.py autoboot 12               beim Einschalten Bank 12 starten (0 = aus)
-  kosmos_remote.py bank-sichern 12 datei.json            Bank 12 direkt in eine Datei (RAM bleibt)
-  kosmos_remote.py bank-einspielen 12 datei.json ["Name"] [--start 20]   Datei direkt in Bank 12
+  kosmos_remote.py bank-sichern 12 datei.json            Bank 12 direkt in eine Datei (RAM bleibt; Namen -> datei.json.namen)
+  kosmos_remote.py bank-einspielen 12 datei.json ["Name"] [--start 20] [--namen datei.namen]   Datei direkt in Bank 12
+                                             (--namen: Zuweisungstabelle „035=name“ mit in die Bank, Firmware 5.03)
 
 Läuft der Server, gehen die übrigen Befehle über ihn (http://localhost:PORT), sonst direkt.
 
@@ -28,12 +29,12 @@ NIE (im Interrupt des CP1, unbemerkt): Anklopfen = Klemme 8 low. 3,5 ms = Status
   09 00 00  Reset wie Einschalten (5.02, keine Antwort)
 FNI (Interrupt des CP1 aus, sichtbar „Q-Z“): getaktet über Klemme 7, Daten auf Klemme 8, Blöcke mit CRC.
   Aufträge: $20 Pi -> 8155, $21 8155 -> Pi, $22/$23 Pi -> Flash (mit Name), $24 Flash -> Pi,
-  $25 Bank komplett -> Pi (Zellen + 18 Byte Bankkopf), $26 alle Namen -> Pi (Verzeichnis).
+  $25 Bank komplett -> Pi (Zellen + 0x200..0x5FF: Name, Generation, gültig, Namensbereich), $26 alle Namen -> Pi,
+  $29 Pi -> Flash mit Name und Namensbereich 0x300..0x5FF (5.03; $01 und $10 entfallen).
   Parameter: F_BANK 0x2C, F_ANF 0x3C, F_ANZ 0x3D (0 = 256), F_START 0x3E, Name 0x60..0x6F; fertig: F_JOB 0 / $EE.
-Weitere Aufträge (Interrupt an): $01 16 Byte Flash roh, $04 Bank laden, $08 Autoboot, $10 Bank suchen,
-  $81 RAM -> Bank mit Name. Aufträge gehen nur, wenn der CP1 auf Tasten wartet.
+Weitere Aufträge (Interrupt an): $04 Bank laden, $08 Autoboot, $80/$81 RAM -> Bank (mit Name). Aufträge gehen nur, wenn der CP1 auf Tasten wartet.
 """
-import json, os, sys, threading, time, subprocess, tempfile, math
+import json, os, re, sys, threading, time, subprocess, tempfile, math
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import kosmos_schnell as ks          # (nur noch die JSON-Hilfen)
@@ -250,7 +251,7 @@ class Leitung:
         werte = {F_BANK: bank, F_ANF: anf & 0xFF, F_ANZ: n, F_START: start & 0xFF}
         if name is not None:
             werte.update({F_NAME + i: c for i, c in enumerate(name.encode('latin-1', 'replace')[:16].ljust(16, b' '))})
-        richtung = {0x20: 'E', 0x22: 'E', 0x23: 'E', 0x25: 'K', 0x26: 'N'}.get(job, 'A')
+        richtung = {0x20: 'E', 0x22: 'E', 0x23: 'E', 0x29: 'E', 0x25: 'K', 0x26: 'N'}.get(job, 'A')
         kopf = bytes([job, bank, anf & 0xFF, n]).hex()
         letzter = ''
         with self.lock:
@@ -305,11 +306,6 @@ class Leitung:
                 except KeineAntwort:
                     if v == VERSUCHE - 1: raise
 
-    def flash_lies(self, bank, sektor, ofs):
-        """16 Byte roh aus dem Flash"""
-        self.auftrag(0x01, {F_BANK: bank, F_SEKT: sektor, F_OFH: ofs >> 8, F_OFL: ofs & 0xFF})
-        return self.ram(F_NAME, 16)
-
     def flash_verzeichnis(self):
         """-> {'autoboot': n, 'baenke': [{'bank', 'name', 'start'}]}: Bank 0 per FNI + alle Namen per FNI"""
         with self.lock:
@@ -356,43 +352,139 @@ class Leitung:
             if bis is None: bis = self.ram(MEM_SIZE, 1)[0]
             return self._zellen(self.fni(0x21, von, bis - von + 1), von)
 
+    def bank_komplett(self, bank):
+        """Ganze Bank direkt aus dem Flash ($25, RAM bleibt): 256 Zellen, dahinter 0x200..0x5FF.
+        -> {'zellen', 'name', 'namen'}; namen nur, wenn Byte 0x212 = 00 (5.03, Namensbereich ab 0x300)"""
+        d = self.fni(0x25, 0, 0, bank=bank)
+        meta = d[512:]
+        namen = namen_aus_bytes(meta[0x100:0x400]) if len(meta) >= 0x400 and meta[0x12] == 0 else {}
+        return {'zellen': self._zellen(d[:512], 0), 'name': name_text(meta[:16]), 'namen': namen}
+
     def bank_sichern(self, bank, von=0, bis=255):
         """Bank direkt aus dem Flash; das RAM des CP1 bleibt unberührt. Ganze Bank: Komplettdump ($25) mit Name.
         -> (zellen, name)"""
         if (von, bis) == (0, 255):
-            d = self.fni(0x25, 0, 0, bank=bank)
-            return self._zellen(d[:512], 0), name_text(d[512:528])
+            k = self.bank_komplett(bank)
+            return k['zellen'], k['name']
         return self._zellen(self.fni(0x24, von, bis - von + 1, bank=bank), von), None
 
-    def bank_einspielen(self, bank, zellen, name=None, start=None):
-        """Zellen direkt in eine Bank (FNI $22/$23); Rest der Bank bleibt; start != None -> Verzeichnis"""
+    def bank_einspielen(self, bank, zellen, name=None, start=None, namen=None):
+        """Zellen direkt in eine Bank (FNI $22/$23); Rest der Bank bleibt; start != None -> Verzeichnis.
+        namen (dict, auch leer) -> $29 (5.03): Namensbereich 0x300..0x5FF wird mitgeschrieben (Name dann Pflicht)"""
         if not 1 <= bank <= 255: raise ValueError('Bank 1..255')
         von, bis = min(zellen), max(zellen)
-        self.fni(0x23 if name is not None else 0x22, von, bis - von + 1, bank=bank,
-                 daten=self._bytes(zellen, von, bis), start=255 if start is None else start, name=name)
+        daten = self._bytes(zellen, von, bis)
+        if namen is not None:
+            job, daten, name = 0x29, daten + namen_bytes(namen), (name or '')
+        else:
+            job = 0x23 if name is not None else 0x22
+        self.fni(job, von, bis - von + 1, bank=bank, daten=daten, start=255 if start is None else start, name=name)
         return {'bank': bank, 'von': von, 'bis': bis}
 
 
-def disasm(zellen):
-    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as f:
-        json.dump({f'{n:03d}': list(v) for n, v in sorted(zellen.items())}, f)
+NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def namen_lesen(text):
+    """Zuweisungstabelle „035=display_loop“ (eine je Zeile) -> {035: 'display_loop'}; Unpassendes wird übergangen"""
+    out = {}
+    for z in (text or '').splitlines():
+        m = re.match(r'^\s*(\d{1,3})\s*=\s*(\S+)\s*$', z)
+        if m and int(m.group(1)) <= 255 and NAME_RE.match(m.group(2)):
+            out[int(m.group(1))] = m.group(2)
+    return out
+
+
+NAMEN_PLATZ = 0x300                       # 5.03: Namensbereich 0x300..0x5FF jedes Bank-Sektors
+
+
+def namen_bytes(namen):
+    """{adresse: name} -> 768 Byte: je Eintrag Länge, Adresse, Name (ASCII); Rest FF (Länge FF = Ende)"""
+    out = bytearray()
+    for a, n in sorted(namen.items()):
+        b = n.encode('ascii')[:63]
+        if len(out) + 2 + len(b) > NAMEN_PLATZ - 1:
+            raise ValueError(f'Namensbereich voll ({NAMEN_PLATZ} Byte) – ab {a:03d}={n} passt nichts mehr')
+        out += bytes([len(b), a & 0xFF]) + b
+    return bytes(out) + b'\xff' * (NAMEN_PLATZ - len(out))
+
+
+def namen_aus_bytes(d):
+    namen, i = {}, 0
+    while i + 2 <= len(d) and 1 <= d[i] <= 63:
+        n, a = d[i], d[i + 1]
+        try:
+            name = bytes(d[i + 2:i + 2 + n]).decode('ascii')
+        except UnicodeDecodeError:
+            break
+        if NAME_RE.match(name): namen[a] = name
+        i += 2 + n
+    return namen
+
+
+def namen_text(namen):
+    return ''.join(f'{a:03d}={n}\n' for a, n in sorted(namen.items()))
+
+
+def _php(name):
+    return os.path.join(os.path.dirname(os.path.realpath(__file__)), name)
+
+
+def disasm(zellen, namen=None):
+    """Listing; namen {adresse: name} ersetzen label_N/wert_N"""
+    d = tempfile.mkdtemp()
     try:
-        return subprocess.run(['php', os.path.join(os.path.dirname(os.path.realpath(__file__)), 'kosmos_disasm.php'), f.name],
-                              capture_output=True, text=True, timeout=20).stdout
+        js = os.path.join(d, 'prog.json')
+        json.dump({f'{n:03d}': list(v) for n, v in sorted(zellen.items())}, open(js, 'w'))
+        args = ['php', _php('kosmos_disasm.php')]
+        if namen:
+            open(os.path.join(d, 'namen.txt'), 'w').write(namen_text(namen))
+            args += ['-n', os.path.join(d, 'namen.txt')]
+        return subprocess.run(args + [js], capture_output=True, text=True, timeout=20).stdout
     finally:
-        os.unlink(f.name)
+        subprocess.run(['rm', '-rf', d])
 
 
 def asm(quelltext):
+    """-> (zellen 0..255, Ausgabe des Assemblers mit aktuellen Zeilennummern an den Marken)"""
     d = tempfile.mkdtemp()
-    src = os.path.join(d, 'prog.koa')
-    open(src, 'w').write(quelltext)
-    r = subprocess.run(['php', os.path.join(os.path.dirname(os.path.realpath(__file__)), 'kosmos_asm.php'), '-o', src],
-                       capture_output=True, text=True, timeout=20, cwd=d)
-    js = [os.path.join(d, n) for n in os.listdir(d) if n.endswith('.json')]
-    if not js:
-        raise ValueError((r.stdout + r.stderr).strip() or 'Assembler lieferte nichts')
-    return {int(k): tuple(v) for k, v in json.load(open(js[0])).items()}, r.stdout
+    try:
+        src = os.path.join(d, 'prog.koa')
+        open(src, 'w').write(quelltext)
+        r = subprocess.run(['php', _php('kosmos_asm.php'), '-o', src], capture_output=True, text=True, timeout=20, cwd=d)
+        js = [os.path.join(d, n) for n in os.listdir(d) if n.endswith('.json')]
+        if not js:
+            raise ValueError((r.stdout + r.stderr).strip() or 'Assembler lieferte nichts')
+        return {int(k): tuple(v) for k, v in json.load(open(js[0])).items()}, r.stdout
+    finally:
+        subprocess.run(['rm', '-rf', d])
+
+
+MARKE_RE = re.compile(r'^(\s*)>([^\s:]+):.*$')
+
+
+def assemblieren(quelltext, namen_alt=''):
+    """Assemblieren + Relabel: Zeilennummern in den Markenzeilen des Quelltexts auf die echten Adressen setzen
+    (sonst bleibt der Text, wie er ist). Zuweisungstabelle = Marken des Quelltexts + Einträge von Hand, deren
+    Name keine Marke ist. -> dict(zellen, quelltext, namen, von, bis)"""
+    zellen, ausgabe = asm(quelltext)
+    marken = {}
+    for z in ausgabe.splitlines():
+        m = re.match(r'^>([^\s:]+):\s+(\d{3})\s*$', z)
+        if m: marken[m.group(1)] = int(m.group(2))
+    zeilen = []
+    for z in quelltext.split('\n'):
+        m = MARKE_RE.match(z)
+        if m and m.group(2) in marken:
+            z = m.group(1) + f'>{m.group(2)}:'.ljust(28) + f'{marken[m.group(2)]:03d}'
+        zeilen.append(z)
+    namen = {a: n for n, a in marken.items() if NAME_RE.match(n)}
+    for a, n in namen_lesen(namen_alt).items():
+        if n not in marken and a not in namen:
+            namen[a] = n
+    belegt = [n for n, v in zellen.items() if v != (0, 0)]
+    return {'zellen': zellen, 'quelltext': '\n'.join(zeilen), 'namen': namen,
+            'von': 0, 'bis': max(belegt or [0])}
 
 
 def serve(port):
@@ -432,11 +524,18 @@ def serve(port):
                 if self.path == '/api/taste':
                     leitung.tasten(req['tasten'])
                     return self.antwort(200, {'ok': True})
+                if self.path == '/api/assemblieren':
+                    r = assemblieren(req['quelltext'], req.get('namen', ''))
+                    return self.antwort(200, {'quelltext': r['quelltext'], 'namen': namen_text(r['namen']),
+                                              'zellen': {f'{k:03d}': list(v) for k, v in sorted(r['zellen'].items())},
+                                              'bis': r['bis']})
+                if self.path == '/api/disasm':
+                    z = {int(k): tuple(v) for k, v in req['zellen'].items()}
+                    return self.antwort(200, {'listing': disasm(z, namen_lesen(req.get('namen', '')))})
                 if self.path == '/api/laden':
                     if 'quelltext' in req:
-                        zellen, meldung = asm(req['quelltext'])
-                        belegt = [n for n, v in zellen.items() if v != (0, 0)]   # der Assembler liefert alle 256 Zellen
-                        zellen = {n: v for n, v in zellen.items() if n <= max(belegt or [0])}
+                        r = assemblieren(req['quelltext'], req.get('namen', ''))
+                        zellen = {n: v for n, v in r['zellen'].items() if n <= r['bis']}   # bis zur letzten belegten Zelle
                     else:
                         zellen = {int(k): tuple(v) for k, v in req['zellen'].items()}
                     voll = {i: zellen.get(i, (0, 0)) for i in range(min(zellen), max(zellen) + 1)}
@@ -445,7 +544,7 @@ def serve(port):
                 if self.path == '/api/speichern':
                     z = leitung.speichern(req.get('von'), req.get('bis'))
                     return self.antwort(200, {'zellen': {f'{k:03d}': list(v) for k, v in sorted(z.items())},
-                                              'listing': disasm(z)})
+                                              'listing': disasm(z, namen_lesen(req.get('namen', '')))})
                 if self.path == '/api/flash/speichern':
                     b = int(req['bank'])
                     if not 1 <= b <= 255: raise ValueError('Bank 1..255')
@@ -470,14 +569,18 @@ def serve(port):
                     return self.antwort(200, {'ok': True})
                 if self.path == '/api/bank/sichern':
                     b = int(req['bank'])
-                    z, name = leitung.bank_sichern(b)
-                    return self.antwort(200, {'bank': b, 'name': name, 'zellen': {f'{k:03d}': list(v) for k, v in z.items()},
-                                              'listing': disasm(z)})
+                    k = leitung.bank_komplett(b)
+                    namen = k['namen'] or namen_lesen(req.get('namen', ''))     # Namen aus der Bank haben Vorrang
+                    return self.antwort(200, {'bank': b, 'name': k['name'], 'namen': namen_text(namen), 'namen_aus_bank': bool(k['namen']),
+                                              'zellen': {f'{a:03d}': list(v) for a, v in k['zellen'].items()},
+                                              'listing': disasm(k['zellen'], namen)})
                 if self.path == '/api/bank/einspielen':
                     z = {int(k): tuple(v) for k, v in req['zellen'].items()}
                     st = req.get('start')
+                    nm = req.get('namen')
                     r = leitung.bank_einspielen(int(req['bank']), z, req.get('name') or None,
-                                                None if st in (None, '') else int(st) & 255)
+                                                None if st in (None, '') else int(st) & 255,
+                                                None if nm is None else namen_lesen(nm))
                     return self.antwort(200, r)
                 return self.antwort(404, {'fehler': 'unbekannt'})
             except (KeineAntwort, FlashFehler) as e:
@@ -550,17 +653,22 @@ def main(argv):
         b = int(rest[0])
         if srv:
             r = ueber_server('/api/bank/sichern', {'bank': b}, port=port)
-            z, name = {int(k): tuple(v) for k, v in r['zellen'].items()}, r.get('name')
-        else: z, name = Leitung().bank_sichern(b)
+            z, name, namen = {int(k): tuple(v) for k, v in r['zellen'].items()}, r.get('name'), namen_lesen(r.get('namen', ''))
+        else:
+            k = Leitung().bank_komplett(b); z, name, namen = k['zellen'], k['name'], k['namen']
         ks.json_schreiben(rest[1], z)
-        print(f'Bank {b:03d}' + (f' „{name}“' if name else '') + f' -> {rest[1]}'); return 0
+        if namen:
+            open(rest[1] + '.namen', 'w').write(namen_text(namen))
+        print(f'Bank {b:03d}' + (f' „{name}“' if name else '') + f' -> {rest[1]}' + (f' (+ {len(namen)} Namen in {rest[1]}.namen)' if namen else '')); return 0
     if cmd == 'bank-einspielen':
         b = int(rest[0]); z = ks.json_lesen(rest[1])
         st = int(rest[rest.index('--start') + 1]) if '--start' in rest else None
-        name = next((a for a in rest[2:] if a != '--start' and a != str(st)), None)
-        obj = {'bank': b, 'zellen': {f'{k:03d}': list(v) for k, v in z.items()}, 'name': name, 'start': st}
+        nd = rest[rest.index('--namen') + 1] if '--namen' in rest else None
+        name = next((a for a in rest[2:] if a not in ('--start', '--namen', str(st), nd)), None)
+        nt = open(nd).read() if nd else None
+        obj = {'bank': b, 'zellen': {f'{k:03d}': list(v) for k, v in z.items()}, 'name': name, 'start': st, 'namen': nt}
         if srv: ueber_server('/api/bank/einspielen', obj, port=port)
-        else: Leitung().bank_einspielen(b, z, name, st)
+        else: Leitung().bank_einspielen(b, z, name, st, None if nt is None else namen_lesen(nt))
         print(f'{rest[1]} -> Bank {b:03d}'); return 0
     if cmd == 'speichern':
         von = int(rest[rest.index('--von') + 1]) if '--von' in rest else None

@@ -10,12 +10,12 @@ Quick reference (German, 3 pages A4, firmware 4.02 with all extensions; not yet 
 
 This toolchain consists of the following tools:
 
-Firmware 5.02 in short
+Firmware 5.04 in short
 ----------------------
 
 The CP1 runs an extended firmware (own code in the 8049's upper address range, two halves of
 an AT28C64B switched by P1.4, see "SPI flash" below). At power-on it shows its version
-(`5.02`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
+(`5.04`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
 flash, and the Raspberry Pi talks to the CP1 over port 1 terminals 7 and 8 at any time.
 
 Wiring to the Pi (both lines with the same protection; the Pi only ever pulls low):
@@ -87,9 +87,17 @@ kosmos_remote.py reset                   cold start like power-on, all memory cl
 
 Remote control is always on. The web page (http://bastelpi:8049/) shows the live display,
 accumulator and PC, has a keyboard like the CP1's (keys are held as long as you hold them, so
-"CAS 1 s" works), loads assembler source or JSON, fetches memory as listing and JSON, shows and
-edits single cells (optionally following them live while a program runs) and has a flash panel
-(directory, load, save, autoboot, fetch a bank, write a JSON file into a bank).
+"CAS 1 s" works), one program editor and a name table, shows and edits single cells (optionally
+following them live while a program runs) and has a flash panel (directory, load, save, autoboot).
+
+The editor holds one program: fetch it from the CP1 memory, from a flash bank ("In Editor" in the
+directory) or from a .koa/.json file; change it; then "Assemblieren" (check, relabel), "In CP1
+laden", "Editor speichern" (directly into a bank, memory untouched) or save it as .koa/.json.
+The name table beside it ("035=display_loop") gives the disassembler speaking labels. When you
+assemble, it is rebuilt from the labels in the source (plus your own entries for cells without a
+label). With firmware 5.03 the table is stored in the flash bank together with the program and
+comes back with "In Editor". In a .koa download it is appended as `// 035=name` comment lines,
+which the editor reads back when opening the file. The draft stays in the browser.
 
 The timing is done by `kosmos_rc` (C, built with `gcc -O2 -o kosmos_rc kosmos_rc.c`), which
 drives and samples the GPIO registers through /dev/gpiomem; Python on a Pi Zero is too slow.
@@ -123,11 +131,13 @@ FNI protocol (interrupt off): terminal 7 = T (P1.6, clock), terminal 8 = D (P1.7
   (0 = 256), F_START 0x3E (255 = no directory entry), name 0x60-0x6F. Result in F_JOB (0x26):
   0 = ok, $EE = error/refused.
 - Jobs: $20 Pi -> memory, $21 memory -> Pi, $22 / $23 Pi -> flash (without / with name),
-  $24 flash -> Pi, $25 whole bank -> Pi (256 cells + 18-byte bank head: name, generation,
-  valid), $26 all names (per used bank a block [bank, 0, name 0-5], [name 6-13], [name 14-15];
-  end = block of 8 zeros). The directory is read with $24 of bank 0 plus $26.
-- Jobs with interrupt on: $01 read 16 raw flash bytes, $04 load bank, $08 autoboot,
-  $10 find the next used bank from F_BANK, $81 memory -> bank with name.
+  $24 flash -> Pi, $25 whole bank -> Pi (256 cells, then 0x200-0x5FF of the sector: name,
+  generation, valid, name table; 128 blocks of 8), $26 all names (per used bank a block
+  [bank, 0, name 0-5], [name 6-13], [name 14-15]; end = block of 8 zeros), $29 Pi -> flash with
+  name and name table (5.03: after the cell blocks 96 blocks of 8 for 0x300-0x5FF).
+  The directory is read with $24 of bank 0 plus $26.
+- Jobs with interrupt on: $04 load bank, $08 autoboot, $80/$81 memory -> bank (with name).
+  ($01 raw read and $10 find bank were dropped in 5.03.)
 
 
 
@@ -139,8 +149,8 @@ kosmos_remote.py flash                         directory (bank, start, name, aut
 kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   CP1 memory -> bank 12
 kosmos_remote.py flash-laden 12                bank 12 -> memory, PC = start
 kosmos_remote.py autoboot 12                   start bank 12 at power-on (0 = off)
-kosmos_remote.py bank-sichern 12 file.json     bank 12 -> file directly (memory untouched)
-kosmos_remote.py bank-einspielen 12 file.json ["Name"] [--start 20]   file -> bank 12 directly
+kosmos_remote.py bank-sichern 12 file.json     bank 12 -> file directly (memory untouched; names -> file.json.namen)
+kosmos_remote.py bank-einspielen 12 file.json ["Name"] [--start 20] [--namen file.namen]   file -> bank 12 directly
 ```
 
 Hardware: an IS25LP016D (2 MB, 3.3 V) on port 1 terminals 1-4: P1.0 = CS#, P1.1 = SCK,
@@ -162,6 +172,10 @@ writing erases the free sector, copies the old contents over in 8-byte pieces, i
 cells and finally marks the sector valid (generation counter), so a power failure never loses
 the old version. Bank 0 is the directory: cell 0 = (00, autoboot bank), cell n = (00, start
 of bank n). Name (16 ASCII characters) and generation are stored behind the cells.
+Firmware 5.03: 0x300-0x5FF of the sector hold the name table (per entry: length, cell, name in
+ASCII; FF = end; 768 bytes, about 70 names of 8 characters). Byte 0x212 = 00 marks a bank with
+names. Only then the copy runs up to 0x5FF (about 1.7 s longer), otherwise it stops at 0x217
+as before.
 
 On the CP1 (always 3 digits; CLR clears the input, STP aborts):
 - CAS short: `bAn ___`, type nnn, CAS: memory -> bank nnn, start = current PC (set it first
@@ -203,8 +217,8 @@ Displays the contents of the JSON file in a decent way and shows the opcodes.
 
 
 
-kosmos_disasm.php [-i] [-c] [-d] [-o] filename.json
----------------------------------------------------
+kosmos_disasm.php [-i] [-c] [-d] [-o] [-n names.txt] filename.json
+-----------------------------------------------------------------
 
 Disassembles the JSON file and creates a KOA assembly language file.
 
@@ -215,7 +229,13 @@ Options:
        -d show description
        -i show inline numerics
        -o create filename.koa
+       -n name table: one "035=display_loop" per line; these names are used instead of
+          label_N / wert_N, and every named cell gets a label (even if nothing refers to it)
 ```
+
+Every label line shows the cell number it stands for (`>display_loop:          035`). It is
+only for reading: the assembler ignores everything behind the label and writes the current
+number again with `-r` (relabel), so moving code never causes a conflict.
 
 By default kosmos_disasm displays only the assembly tokens and the labels it has
 has recognized. Line numbers are omitted if possible:
@@ -418,6 +438,8 @@ user@machine:# kosmos_asm.php example.koa -i
 Line numbers in parentheses are automatically assigned by the assembler.
 
 If you like the beautified output, you can use the -r option to rewrite your source file with the beautified version.
+The beautified output (and -r) puts the current cell number behind every label, so you see where things landed.
+Several labels in a row all name the same cell.
 
 Note: You can add comments by starting a line with '//'. These comments will be preserved by the assembler.
 You can also add comments at the end of any line that starts with '//', but these will be retained in the

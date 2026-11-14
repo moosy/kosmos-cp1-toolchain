@@ -38,8 +38,8 @@
 #define NULL_US 150
 #define LUECKE_US 50
 /* FNI: Mindestzeiten; Verzögerungen des Pi verlängern nur (der CP1 fragt alle 15 µs ab) */
-#define FNI_LOW_US 40
-#define FNI_HIGH_US 40
+#define FNI_LOW_US 80             /* der CP1 (4 MHz, Abfrage alle 22,5 µs) hält T nach höchstens ~45 µs fest */
+#define FNI_HIGH_US 100           /* T high, bevor der Pi wieder zieht: der CP1 muss das High sicher sehen */
 #define FNI_ANNAHME_US 300000  /* so lange auf „T low“ (Auftrag übernommen) warten */
 #define FNI_FRIST_US 5000000   /* so lange darf der CP1 T festhalten (Flash löschen/kopieren) */
 
@@ -72,6 +72,7 @@ static int t_warten(int pegel_soll, uint64_t frist_us) {
     while (t_pegel() != pegel_soll) if (us() > ende_) return 0;
     return 1;
 }
+static int blocknr = 0;
 static int bit_senden(int b) {
     if (!t_warten(1, FNI_FRIST_US)) return 0;
     warte_bis(us() + FNI_HIGH_US);
@@ -101,35 +102,40 @@ static int byte_lesen(uint8_t *x) {
 }
 /* 1 gut, 0 Zeit um, -1 nach Versuchen aufgegeben */
 static int block_senden(const uint8_t *d, int n) {
-    for (int v = 0; v < 4; v++) {
+    blocknr++;
+    for (int v = 0; v < 3; v++) {          /* wie der CP1: 3 Versuche */
         for (int i = 0; i < n; i++) if (!byte_senden(d[i])) return 0;
         if (!byte_senden(crc8(d, n))) return 0;
         int q; if (!bit_lesen(&q)) return 0;
         if (q) return 1;
+        fprintf(stderr, "FNI: Block %d (%d Byte) vom CP1 nicht angenommen, Versuch %d\n", blocknr, n, v + 1);
     }
     return -1;
 }
 static int block_lesen(uint8_t *d, int n) {
     uint8_t buf[9];
-    for (int v = 0; v < 4; v++) {
+    blocknr++;
+    for (int v = 0; v < 3; v++) {          /* wie der CP1: 3 Versuche */
         for (int i = 0; i <= n; i++) if (!byte_lesen(&buf[i])) return 0;
         int ok = crc8(buf, n) == buf[n];
         if (!bit_senden(ok)) return 0;
         if (ok) { memcpy(d, buf, n); return 1; }
+        fprintf(stderr, "FNI: Block %d (%d Byte) mit falscher CRC empfangen, Versuch %d\n", blocknr, n, v + 1);
     }
     return -1;
 }
 static void fni(char *zeile) {
-    char richtung; unsigned anf, anz; char kopfhex[16] = "", datenhex[1100] = "";
+    char richtung; unsigned anf, anz; char kopfhex[16] = "", datenhex[2700] = "";
     static uint8_t daten[256 * 18 + 600];
-    if (sscanf(zeile, "F %c %u %u %15s %1099s", &richtung, &anf, &anz, kopfhex, datenhex) < 4 || strlen(kopfhex) != 8) { printf("FEHLER Aufruf\n"); return; }
+    if (sscanf(zeile, "F %c %u %u %15s %2699s", &richtung, &anf, &anz, kopfhex, datenhex) < 4 || strlen(kopfhex) != 8) { printf("FEHLER Aufruf\n"); return; }
     uint8_t kopf[4]; for (int i = 0; i < 4; i++) { unsigned x; sscanf(kopfhex + 2 * i, "%2x", &x); kopf[i] = x; }
     int zellen = anz ? (int)anz : 256, laenge = 0;
     if (richtung == 'E') {
-        if ((int)strlen(datenhex) != 4 * zellen) { printf("FEHLER Datenlaenge\n"); return; }
-        for (int i = 0; i < 2 * zellen; i++) { unsigned x; sscanf(datenhex + 2 * i, "%2x", &x); daten[i] = x; }
+        laenge = (int)strlen(datenhex) / 2;      /* 5.03: hinter den Zellen ggf. der Namensbereich (Vielfaches von 8) */
+        if (laenge < 2 * zellen || (laenge - 2 * zellen) % 8) { printf("FEHLER Datenlaenge\n"); return; }
+        for (int i = 0; i < laenge; i++) { unsigned x; sscanf(datenhex + 2 * i, "%2x", &x); daten[i] = x; }
     }
-    los(); t_los();
+    los(); t_los(); blocknr = 0;
     if (!t_warten(0, FNI_ANNAHME_US)) { printf("FEHLER nicht_angenommen\n"); return; }
     int r;
     if (richtung == 'N') {          /* alle Namen */
@@ -159,13 +165,12 @@ static void fni(char *zeile) {
         if (r != 1) { printf("FEHLER Block_%d_%s\n", pos / 2, r ? "aufgegeben" : "Zeit"); los(); t_los(); return; }
         pos += 2 * k; rest -= k; c = (c + k) & 0xFF;
     }
-    if (richtung == 'K') {          /* Bankkopf: Name, Generation, gültig */
-        static const int teile[3] = { 8, 8, 2 };
-        for (int i = 0; i < 3; i++) {
-            if (block_lesen(daten + pos, teile[i]) != 1) { printf("FEHLER Bankkopf\n"); los(); t_los(); return; }
-            pos += teile[i];
-        }
-    }
+    if (richtung == 'E')            /* 5.03 ($29): Namensbereich in 8-Byte-Blöcken */
+        for (; pos < laenge; pos += 8)
+            if ((r = block_senden(daten + pos, 8)) != 1) { printf("FEHLER Namen_%s\n", r ? "aufgegeben" : "Zeit"); los(); t_los(); return; }
+    if (richtung == 'K')            /* 5.03: 0x200..0x5FF (Name, Generation, gültig, Namensbereich), 128 Blöcke à 8 */
+        for (int i = 0; i < 128; i++, pos += 8)
+            if (block_lesen(daten + pos, 8) != 1) { printf("FEHLER Bankkopf\n"); los(); t_los(); return; }
     los();
     if (!t_warten(1, FNI_FRIST_US)) { printf("FEHLER Ende\n"); t_los(); return; }
     printf("OK");
@@ -185,7 +190,7 @@ int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     printf("BEREIT %s\n", rt ? "rt" : "ohne-rt");
 
-    char zeile[1200];
+    char zeile[3000];
     static unsigned lows[4096];
     while (fgets(zeile, sizeof zeile, stdin)) {
         if (zeile[0] == 'F') { fni(zeile); continue; }
