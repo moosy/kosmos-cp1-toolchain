@@ -139,7 +139,7 @@ erw = [(b, bytes(bank(fl, b)[0x200:0x210])) for b in range(1, 256) if bank(fl, b
 pruef('alle Namen: Bänke 7 und 9 (Testbank, ohne Name)', pi.fehler is None and pi.namen == erw and [b for b, _ in pi.namen] == [7, 9], f'{pi.fehler} {pi.namen}')
 print(f'     alle Namen: {ms:.0f} ms Simulationszeit')
 print('5.03: $29 Pi -> Flash mit Name und Namensbereich 0x300..0x5FF')
-sys.path.insert(0, '../../remote'); sys.path.insert(0, '../fernsteuerung')
+sys.path.insert(0, '../..'); sys.path.insert(0, '../../remote'); sys.path.insert(0, '../fernsteuerung')
 from kosmos_remote import namen_bytes, namen_aus_bytes
 namen = {0: 'start', 5: 'schleife', 100: 'punkte', 255: 'ende'} | {i: f'n{i:03d}_langername' for i in range(10, 50)}
 nb = namen_bytes(namen)
