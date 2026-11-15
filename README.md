@@ -10,6 +10,14 @@ Quick reference (German, 3 pages A4, firmware 5.05 with all extensions): [cp1-sc
 
 Firmware internals, the terminal 7/8 protocol (K78P) with NIE and FNI, jobs and flash layout: [INTERNALS.md](INTERNALS.md)
 
+Everything else of the project is here too:
+- [firmware/](firmware/) - sources of the extended firmware 5.x, own assembler, simulator and tests
+  (the original ROM is copyrighted and not included; the build patches asig's `cp1.asm`)
+- [hardware/](hardware/) - the EA adapter board (KiCad generator, board, Gerber, schematic)
+- [docs/](docs/) - German project documentation (`firmware-de.md`) and the raw lab notebook (`laborbuch-de.md`)
+- [examples/](examples/) - Rakete, Lauftext, Asteroiden; [cheatsheet/](cheatsheet/) - sources of the quick reference
+- `kosmos-remote.service` - systemd unit for the web page
+
 This toolchain consists of the following tools:
 
 Firmware 5.05 in short

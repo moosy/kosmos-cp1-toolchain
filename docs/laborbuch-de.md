@@ -1,0 +1,108 @@
+# Kosmos CP1 – Laborbuch
+
+Rohe Arbeitsnotizen von Claude zum CP1-Projekt mit Michael, chronologisch, mit Irrwegen. Die aufgeräumte Fassung steht
+in `firmware-de.md`, das Protokoll in `../INTERNALS.md`. Abbilder der Firmware nur
+privat (Copyright Kosmos, nie in ein Repo).
+
+## Warum
+
+Der CP1 war Michaels erster Rechner, an dem er programmieren gelernt hat. Das Original ging durch ein Gewitter an der
+Gartenbahn verloren; das jetzige Gerät ist ein Ersatz. Ziel: ROM nachbauen, erweitern, mit dem Pi verbinden – ohne
+den Charakter des Geräts zu verlieren.
+
+## 2026-11-02/03 – ROM nachgebaut, Adapter entworfen
+
+- asigs `cp1.asm` + eigener Assembler `asm48.py` ergeben bitgenau MAME `cp1-2716`. Chip im Gerät: M5L8049 „KOSMOS B“, gesockelt.
+- Irrweg: eigenen 8049 per MOVP auslesen geht nicht (EA high → alles extern). ROM-Verify mit 12 V an EA: Datenblatt
+  kennt den Mitsubishi nicht, EA max. 7 V → am eigenen Chip nicht versucht.
+- EA-Adapterplatine v1 in KiCad (Werkbank-Rechner), bei NextPCB bestellt; Teile bei Reichelt; T48-Programmer.
+- T48: Firmware 00.1.03 zu alt für minipro 0.7.4 → Update über Xgpro. **Fehler von mir:** Selbsttest `minipro -t` mit
+  EN25F40 im Sockel laufen lassen (Pins „shorted“). Chip hat überlebt. Seitdem: Selbsttest nur mit leerem Sockel.
+- T48-Autodetect taugt nicht (ID 0x0000); Trick: irgendein 25er-Profil mit `-D`, die Fehlermeldung nennt die echte ID.
+
+## 2026-11-11/12 – Adapter läuft, schnelle Kassette
+
+- Platinen da, leer durchgeklingelt: alles ok.
+- Kein Kassetteninterface vorhanden: bastelpi GPIO 26 hängt direkt an Klemme 8 = P1.7. Schnelle Kassette = reine Software.
+- Drahtbrücke A11 → P23 (JP2 entfällt): 4 KB, 0x800–0xFFF frei.
+- Erststart: Ziffern blinkten einzeln, dann Müll, ALE 11 kHz statt 400 kHz. **Mein Entwurfsfehler:** 22 pF an XTAL1;
+  der NMOS-Oszillator des MCS-48 verträgt dort nur wenige pF (Original: nur an Pin 3). Michael hat C1 entfernt.
+  Lehre: Oszillatorbeschaltung bei Altchips aus Original/Datenblatt, nicht aus 8051/AVR-Gewohnheit.
+- Zweiter Fehler: Tastaturspalten an P20–P23 zwingen bei Tastendruck A8–A11 auf 1 → Absturz mit EA = 1.
+  Fix: 4× BAT42 auf der Stecker-Platine.
+- Schnelle Kassette (Pulse 0,4/1,2 ms, Interrupt stiehlt bis 260 µs) im eigenen Simulator getestet, dann am Gerät:
+  256 Zellen CP1 ↔ Pi, CRC ok.
+- Neue Befehle in einem Rutsch: NEG als XOR, UND, ODR, OVF, ANZ 001 (Vorzeichen), SEG, AS1–AS3, TST, JSR/RET (Stapel
+  24 Ebenen 0x48–0x5F), PSH/POP. Cheat Sheet als PDF (eigener kleiner Satz → SVG → rsvg-convert).
+
+## 2026-11-13 – Fernsteuerung, SPI-Flash
+
+- 3.05: Fernsteuerung im Timer-Interrupt über Klemme 8 (Statusabfrage unsichtbar, ein Byte je Interrupt), Webseite
+  http://bastelpi:8049/, C-Hilfsprogramm `kosmos_rc` für das µs-Timing (Python auf dem Pi Zero zu langsam).
+  Lehre: keine Ferntasten schicken, während Michael ein Programm laufen hat.
+- 4.00: SPI-Flash IS25LP016D an P1.0–P1.3 als „Festplatte“ (256 Bänke, je zwei 4-KB-Sektoren im Wechsel, Verzeichnis
+  in Bank 0). Code passte nicht mehr: **A12 an P1.4** (Michael trennte die Leiterbahn zu Klemme 5), zwei EEPROM-Hälften,
+  Umschaltstummel mit gleichen Bytes in beiden Hälften. P24 ging nicht (schaltet die 8155 im Interrupt).
+  Michael: „WIE GEIL! Es funktioniert!“
+- 4.01/4.02: Bank suchen, Befehle PSK/FRD/FWR, TSE (Taste ohne Warten, VZG merkt Tasten) – Asteroiden-Spiel.
+
+## 2026-11-14 – Trennpunkt, Plan 5.00, K78P
+
+- 4.03: Dezimalpunkt über PA7 (Michael hat den Überspannungs-Transistor umgelegt). Zwei Punkte, weil die Original-
+  Ziffernschiebung Bit 7 mitnahm → Fix in 5.00.
+- Plan 5.00 im Claude-Doc mit Michael abgestimmt („erst reden, nix bauen“). Kern: CAS/CAL bedienen den Flash, die
+  Kassette fliegt raus, zwei Übertragungsarten mit Michaels Namen **NIE** (normal, interrupt enabled) und **FNI**
+  (fast, no interrupt). Klemme 7 umgebaut wie Klemme 8 (Z-Diode 3V3 + 1 kΩ) → zwei Leitungen, I²C-artig.
+  Michael nennt es später **K78P** (Klemme-7-und-8-Protokoll).
+- Warum zwei eigene Bytes LEER/AUFTRAG (0x16/0x17) statt eines Merkbits: Lese-Schreib-Wettlauf zwischen Hauptprogramm
+  und Interrupt. 0x16/0x17 = 8. Ebene des 8049-Stapels, nachweislich nie belegt (Stapeltiefe-Prüfer).
+- Speicher lief über → Lückenfüller `packer.py`, Prüfwerkzeuge (Ablauf, Stapeltiefe, Zyklen). Lehre: bei bedingten
+  Sprüngen gilt die Seite des Operandenbytes.
+- 5.00/5.01 am Gerät ok. Erster Komplettdump scheiterte: Pi startete nach Blockfehler neu, während der CP1 noch
+  wiederholte, und las das alte $EE als „abgelehnt“ → F_JOB vor jedem Versuch auf 0.
+- 5.02: Reset wie Einschalten (CLR halten + STP, NIE 09). Kniff: `CALL $003` im Interrupt, damit das dortige `RETR`
+  den Interrupt-Zustand beendet – sonst käme nie wieder ein Interrupt. Michael: „kaltstart funktioniert sauber“.
+
+## 2026-11-14 nachts – Editor mit Namen, Einschaltfehler, Timing
+
+- Webseite: ein Editor + Namenstabelle (`035=display_loop`), beim Assemblieren Relabeln statt Konflikt
+  (Michael: „es geht nur darum dass man sieht wo was landet“). Namen im Flash-Sektor ab 0x300 (5.03, FNI $29).
+- Einschaltfehler `F 004` / „zufällige 2“ seit 5.00: internes RAM ist beim Einschalten zufällig, AUFTRAG 0x17 wurde als
+  Taste geliefert. Simulator startete immer mit Nullen → nie gesehen. 5.04 löscht die Bytes; Test mit Zufalls-RAM
+  (5.03: 22 von 40 Starts kaputt, 5.04: 0).
+- `P-F.Err` bei langen Übertragungen am Gerät, im Simulator nie. Ursache: 40/40 µs zu knapp (CP1 fragt T nur alle
+  22,5 µs ab, braucht bis ~45 µs), Pi versuchte 4×, CP1 3× → Pi taktete ins Leere, Bitgewitter auf Klemme 8 löste die
+  Notbremse aus. **Mein Fehler dazwischen:** eine „T gehalten?“-Prüfung im Pi eingebaut, die jede Übertragung
+  abbrach (Michael: „da funktioniert nix mehr“) – zurückgebaut. Fix: 80/100 µs, 3 Versuche. Danach keine Wiederholung
+  mehr in 11 Übertragungen.
+- „In Editor“ übernahm die alte Namenstabelle bei Bänken ohne Namen → nur noch die Namen der Bank.
+- Rakete, Lauftext, Asteroiden mit sprechenden Labels versehen (Zellen unverändert verglichen).
+
+## 2026-11-15 – Blättern (5.05)
+
+- Michaels Idee beim Spielen: je Bank eine 6-stellige Anzeige, CAL kurz blättert, CAL lang lädt. Immer ab der
+  niedrigsten belegten Bank, `bAn nnn` blitzt kurz, ohne eigene Anzeige der Name über eine ASCII→Segment-Tabelle.
+- Platz in Hälfte B zu knapp → Kopfanzeigen nach Hälfte A verlegt, gemeinsames Unterprogramm `naechste_bank`.
+- Test fand: `kopf_bank` nutzte S_SYM (0x6D), das in F_NAME liegt → „m“ im 14. Namenszeichen. Behoben.
+- Am Gerät: „blättern klappt“. Rundlauf ~1,6 s (SPI-Prüfung aller Bänke).
+- Frei danach: Hälfte A 144, B 52 Byte. Reserve: 2× AT28C256 (A13 an P1.5 würde Klemme 6 kosten).
+- Toolchain nach GitHub gepusht (Michaels OK), dazu `INTERNALS.md` (K78P) und Schnellübersicht 5.05.
+
+## Chips und Stände
+
+| Firmware | SHA-256 (Anfang) | Wo |
+|---|---|---|
+| 5.05 | 3e404bb0 | im CP1 (seit 2026-11-15) |
+| 5.04 | fd58cbc6 | Rückfall |
+| 5.02 | fc9a6fa8 | – |
+| 5.01 | 8dc4cd1b | – |
+
+## Arbeitsregeln, die sich bewährt haben
+
+- Große Vorhaben: erst Plan mit Michael, er sagt „go“.
+- Firmware nur nach Simulator-Tests (`v5/alle_tests.sh`) brennen lassen; Pi-Software erst mit passender Firmware aktivieren.
+- Nichts fernsteuern, während Michael spielt oder tippt.
+- Pi-Pins immer als Pin und BCM nennen.
+
+---
+*Geschrieben von Claude (KI), 2026-11-15.*

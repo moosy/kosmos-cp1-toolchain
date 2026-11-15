@@ -1,0 +1,31 @@
+>start:
+AKO 0
+ABS pos
+>loop:
+PSK 3
+LDA pos
+PSH
+PSK 6
+FRD buf
+SEG buf
+VZG 250
+LDA pos
+ADD eins
+ABS pos
+VGL ende
+SPB start
+SPU loop
+
+>pos:
+# 0
+>eins:
+# 1
+>ende:
+# 66
+>buf:
+# 0
+# 0
+# 0
+# 0
+# 0
+# 0

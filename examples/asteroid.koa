@@ -1,0 +1,232 @@
+OVF 0
+PSK 4
+PSK 0
+PSK 2
+FRD hisc
+>neu:
+AKO 0
+ABS score
+AKO 1
+ABS ship
+AKO 25
+ABS tempo
+JSR neuast
+>loop:
+JSR zeichne
+LDA tempo
+ABS cnt
+>warte:
+VZG 10
+TSE
+VGL acht
+SPB hoch
+VGL zwei
+SPB runter
+>wweiter:
+LDA cnt
+SUB eins
+ABS cnt
+VGL null
+SPB weiter
+SPU warte
+>hoch:
+LDA ship
+VGL zwei
+SPB wweiter
+ADD eins
+ABS ship
+JSR zeichne
+SPU wweiter
+>runter:
+LDA ship
+VGL null
+SPB wweiter
+SUB eins
+ABS ship
+JSR zeichne
+SPU wweiter
+>weiter:
+LDA apos
+ADD eins
+ABS apos
+VGL fuenf
+SPB pruef
+SPU loop
+>pruef:
+LDA arow
+ADD arow
+ADD ship
+VGL zwei
+SPB gut
+SPU crash
+>gut:
+LDA score
+ADD eins
+ABS score
+LDA tempo
+VGL acht
+SPB gleich
+SUB eins
+ABS tempo
+>gleich:
+JSR neuast
+SPU loop
+>neuast:
+AKO 0
+ABS apos
+LDA seed
+ADD seed
+ADD seed
+ADD seed
+ADD seed
+ADD drei
+ABS seed
+AKO 0
+ABS arow
+LDA seed
+VGR c127
+SPB oben
+RET
+>oben:
+AKO 1
+ABS arow
+RET
+>zeichne:
+AKO 0
+ABS d0
+ABS d1
+ABS d2
+ABS d3
+ABS d4
+AKO d0
+ADD apos
+ABS zp
+AKO atab
+ADD arow
+ABS zq
+LIA zq
+AIS zp
+AKO stab
+ADD ship
+ABS zq
+LIA zq
+ABS d5
+SEG d0
+RET
+>crash:
+SEG ctab
+JSR pause
+LDA score
+AS1 pb3
+AS2 pb4
+AS3 pb5
+SEG pb
+JSR pause
+LDA score
+VGR hisc
+SPB rekord
+SPU hzeig
+>rekord:
+LDA score
+ABS hisc
+>hzeig:
+PSK 4
+PSK 0
+PSK 2
+FWR hisc
+LDA hisc
+AS1 hb3
+AS2 hb4
+AS3 hb5
+SEG hb
+JSR pause
+SPU neu
+>pause:
+VZG 250
+VZG 250
+VZG 250
+VZG 250
+VZG 250
+VZG 250
+RET
+
+>hisc:
+# 0
+>seed:
+# 0
+>score:
+# 0
+>ship:
+# 0
+>tempo:
+# 0
+>apos:
+# 0
+>arow:
+# 0
+>cnt:
+# 0
+>zp:
+# 0
+>zq:
+# 0
+>null:
+# 0
+>eins:
+# 1
+>zwei:
+# 2
+>drei:
+# 3
+>fuenf:
+# 5
+>acht:
+# 8
+>c127:
+# 127
+>atab:
+# 92
+# 99
+>stab:
+# 8
+# 64
+# 1
+>d0:
+# 0
+>d1:
+# 0
+>d2:
+# 0
+>d3:
+# 0
+>d4:
+# 0
+>d5:
+# 0
+>ctab:
+# 57
+# 80
+# 119
+# 109
+# 116
+# 0
+>pb:
+# 115
+# 28
+# 0
+>pb3:
+# 0
+>pb4:
+# 0
+>pb5:
+# 0
+>hb:
+# 118
+# 4
+# 0
+>hb3:
+# 0
+>hb4:
+# 0
+>hb5:
+# 0

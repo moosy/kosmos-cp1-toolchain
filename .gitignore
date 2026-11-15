@@ -1,3 +1,14 @@
 __pycache__/
 kosmos_rc
 *.neu
+# Kosmos ROM is copyrighted: never commit the listing or anything built from it
+firmware/cp1.asm
+firmware/**/*.bin
+firmware/**/*.sym
+firmware/**/cp1v*.asm
+firmware/**/cp1v*
+# local backups of older versions
+*.v4
+*.v50*
+*.v504alt
+neu503/

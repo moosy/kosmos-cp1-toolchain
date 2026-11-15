@@ -1,0 +1,410 @@
+<title>CP1 Schnellkassette</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Gerät oben (Anzeige + Tastenfeld wie am CP1), darunter Laufwerk und zwei Zeitachsen: Überblick und Lupe auf P1.7 */
+:root {
+  --bg: #e9edef;
+  --panel: #ffffff;
+  --ink: #1b2228;
+  --muted: #5a6872;
+  --rule: #cfd7dc;
+  --wire: #1f5fbf;
+  --one: #0e8a6c;
+  --zero: #c4561a;
+  --isr: #7b68c4;
+  --key: #22272c;
+  --key-ink: #f1f3f4;
+  --focus: #1f5fbf;
+  --case: #d9dcd6;
+  --case-edge: #b9bdb5;
+  --font-display: "Chakra Petch", "Bahnschrift", "DIN Alternate", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --led-on: #ff3b26;
+  --led-off: #3d0f0b;
+  --led-bg: #1a0503;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161a; --panel: #192026; --ink: #e2e8ec; --muted: #94a3ad; --rule: #2c363e;
+    --wire: #6aa8ff; --one: #39c49f; --zero: #f08b4c; --isr: #a497e6; --key: #0b0e10; --key-ink: #e2e8ec;
+    --focus: #6aa8ff; --case: #2a3036; --case-edge: #3a434b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161a; --panel: #192026; --ink: #e2e8ec; --muted: #94a3ad; --rule: #2c363e;
+  --wire: #6aa8ff; --one: #39c49f; --zero: #f08b4c; --isr: #a497e6; --key: #0b0e10; --key-ink: #e2e8ec;
+  --focus: #6aa8ff; --case: #2a3036; --case-edge: #3a434b; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: grid; gap: 4px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(26px, 4vw, 36px); letter-spacing: .01em; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); max-width: 68ch; margin: 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tab {
+  font: 500 14px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--rule);
+  border-radius: 999px; padding: 7px 14px; cursor: pointer;
+}
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.tab:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.geraet {
+  display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start;
+  background: var(--case); border: 1px solid var(--case-edge); border-radius: 10px; padding: 18px;
+}
+@media (max-width: 760px) { .geraet { grid-template-columns: minmax(0, 1fr); } }
+.anzeige-feld { display: grid; gap: 10px; min-width: 0; }
+.led {
+  background: var(--led-bg); border-radius: 6px; padding: 14px 14px 10px; border: 2px solid #000;
+  box-shadow: inset 0 2px 10px rgba(0,0,0,.6);
+}
+.led svg { width: 100%; height: auto; display: block; max-width: 100%; }
+.marke { font: 600 11px var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.zustand { font-family: var(--font-mono); font-size: 13px; color: var(--muted); min-height: 1.5em; }
+.zustand b { color: var(--ink); font-weight: 500; }
+.tasten { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.taste {
+  background: var(--key); color: var(--key-ink); border-radius: 5px; text-align: center; padding: 7px 2px;
+  font: 600 13px var(--font-display); letter-spacing: .05em; border: 2px solid transparent; user-select: none;
+  transition: transform .05s;
+}
+.taste.an { border-color: var(--led-on); transform: translateY(1px); box-shadow: 0 0 0 3px color-mix(in srgb, var(--led-on) 35%, transparent); }
+
+.laufwerk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.laufwerk button {
+  font: 600 14px var(--font-body); background: var(--ink); color: var(--bg); border: 0; border-radius: 6px;
+  padding: 8px 16px; cursor: pointer; min-width: 92px;
+}
+.laufwerk select { font: 500 14px var(--font-body); background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 7px 8px; }
+.laufwerk label { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.zeit { font: 500 15px var(--font-mono); font-variant-numeric: tabular-nums; min-width: 9ch; }
+#regler { flex: 1 1 220px; min-width: 0; accent-color: var(--wire); }
+
+.karte { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 14px; display: grid; gap: 8px; min-width: 0; }
+.karte h2 { font: 600 15px var(--font-display); letter-spacing: .04em; margin: 0; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.karte h2 span { font: 400 13px var(--font-body); color: var(--muted); letter-spacing: 0; }
+canvas { width: 100%; display: block; touch-action: none; }
+.legende { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.legende i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+.werte { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.wert { display: grid; gap: 2px; }
+.wert .k { font: 600 11px var(--font-display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.wert .v { font: 500 16px var(--font-mono); font-variant-numeric: tabular-nums; }
+.erkl { color: var(--muted); font-size: 14px; max-width: 75ch; margin: 0; }
+.erkl code { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+.zoomwahl { display: flex; gap: 6px; flex-wrap: wrap; }
+.zoomwahl button { font: 500 13px var(--font-mono); background: var(--panel); color: var(--ink); border: 1px solid var(--rule); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+.zoomwahl button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { .taste { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>CP1 Schnellkassette</h1>
+    <p class="sub">Drei Abläufe aus dem 8049-Simulator mit der neuen Firmware ab 0x800: was die Anzeige zeigt, welche Tasten gedrückt sind und was auf der Leitung P1.7 (Klemme 8) zum Pi passiert. Alle Zeiten sind simulierte Echtzeit bei 6 MHz.</p>
+  </header>
+
+  <div class="tabs" role="tablist" id="tabs"></div>
+
+  <section class="geraet" aria-label="CP1">
+    <div class="anzeige-feld">
+      <div class="marke">Anzeige</div>
+      <div class="led"><svg id="led" viewBox="0 0 640 150" role="img" aria-label="Siebensegmentanzeige"></svg></div>
+      <div class="zustand" id="zustand"></div>
+    </div>
+    <div class="anzeige-feld">
+      <div class="marke">Tastenfeld</div>
+      <div class="tasten" id="tasten"></div>
+    </div>
+  </section>
+
+  <div class="laufwerk">
+    <button id="play" type="button">▶ Abspielen</button>
+    <label for="tempo">Tempo
+      <select id="tempo">
+        <option value="1">1×</option>
+        <option value="0.25" selected>¼×</option>
+        <option value="0.05">1/20×</option>
+        <option value="0.005">1/200×</option>
+      </select>
+    </label>
+    <span class="zeit" id="zeit">0,000 s</span>
+    <input type="range" id="regler" min="0" max="1000" value="0" step="1" aria-label="Zeitpunkt">
+  </div>
+
+  <section class="karte">
+    <h2>Überblick <span id="ueber-info"></span></h2>
+    <canvas id="ueber" height="120" aria-label="Überblick über den ganzen Ablauf"></canvas>
+    <p class="erkl">Klicken oder ziehen springt an die Stelle. Oben die Tasten, darunter jeder Low-Puls auf P1.7 als Strich.</p>
+  </section>
+
+  <section class="karte">
+    <h2>Lupe auf P1.7 <span>Mitte = aktueller Zeitpunkt</span></h2>
+    <div class="zoomwahl" id="zoomwahl"></div>
+    <canvas id="lupe" height="210" aria-label="Pulsverlauf um den aktuellen Zeitpunkt"></canvas>
+    <div class="legende">
+      <span><i style="background:var(--one)"></i>kurzer Low-Puls = Bit 1 (0,4 ms)</span>
+      <span><i style="background:var(--zero)"></i>langer Low-Puls = Bit 0 (1,2 ms)</span>
+      <span><i style="background:var(--isr)"></i>Timer-Interrupt (Anzeige + Tastatur)</span>
+    </div>
+  </section>
+
+  <section class="karte">
+    <h2>Messwerte <span id="mess-info"></span></h2>
+    <div class="werte" id="werte"></div>
+    <p class="erkl" id="mess-erkl"></p>
+  </section>
+</div>
+
+<script type="application/json" id="daten">__DATEN__</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById('daten').textContent);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const $ = id => document.getElementById(id);
+
+  // ---- Vorbereitung je Ablauf
+  D.forEach(sc => {
+    const p = []; let t0 = null;
+    for (const [t, l] of sc.kanten) {
+      if (l === 0 && t0 === null) t0 = t;
+      else if (l === 1 && t0 !== null) { p.push({ a: t0, b: t, d: t - t0, bit: (t - t0) < 800 ? 1 : 0 }); t0 = null; }
+    }
+    sc.pulse = p;
+    sc.bytes = [];
+    for (let i = 0; i + 8 <= p.length; i += 8) {
+      let v = 0; for (let k = 0; k < 8; k++) v |= p[i + k].bit << k;
+      sc.bytes.push({ a: p[i].a, b: p[i + 7].b, v });
+    }
+    const n = sc.bytes.length;
+    sc.bytes.forEach((b, i) => {
+      if (i === 0) b.name = 'Kennung';
+      else if (i === 1) b.name = 'erste Zelle';
+      else if (i === 2) b.name = 'letzte Zelle';
+      else if (i === n - 1) b.name = 'CRC';
+      else { const z = (sc.bytes[1] ? sc.bytes[1].v : 0) + Math.floor((i - 3) / 2); b.name = ((i - 3) % 2 ? 'Arg. ' : 'Bef. ') + String(z).padStart(3, '0'); }
+    });
+  });
+
+  // ---- 7-Segment
+  const SEG = { a: 'M18 8 L62 8 L54 16 L26 16 Z', b: 'M64 10 L64 62 L56 56 L56 18 Z', c: 'M64 70 L64 122 L56 114 L56 76 Z',
+    d: 'M18 124 L62 124 L54 116 L26 116 Z', e: 'M16 70 L16 122 L24 114 L24 76 Z', f: 'M16 10 L16 62 L24 56 L24 18 Z',
+    g: 'M20 66 L28 60 L52 60 L60 66 L52 72 L28 72 Z' };
+  const ORD = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+  const led = $('led'); const segEl = [];
+  for (let s = 0; s < 6; s++) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${14 + s * 92 + (s >= 1 ? 40 : 0) + (s >= 3 ? 40 : 0)} 6) skewX(-6)`);  // wie am Gerät: 8 88 888
+    const arr = [];
+    for (const k of ORD) {
+      const pth = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pth.setAttribute('d', SEG[k]); pth.setAttribute('fill', 'var(--led-off)'); g.appendChild(pth); arr.push(pth);
+    }
+    led.appendChild(g); segEl.push(arr);
+  }
+  const ZEICHEN = { 0x3f: '0', 0x06: '1', 0x5b: '2', 0x4f: '3', 0x66: '4', 0x6d: 'S', 0x7d: '6', 0x27: '7', 0x7f: '8', 0x6f: '9', 0x39: 'C', 0x50: 'r',
+    0x58: 'c', 0x71: 'F', 0x78: 't', 0x5c: 'o', 0x1c: '⊔', 0x23: '⊓', 0x5e: 'd', 0x6e: 'Y', 0x40: '-', 0x08: '_', 0x79: 'E', 0x73: 'P', 0: ' ' };
+  let letzteAnz = null;
+  function zeigeAnzeige(a) {
+    const k = a.join(','); if (k === letzteAnz) return; letzteAnz = k;
+    a.forEach((v, s) => ORD.forEach((_, i) => segEl[s][i].setAttribute('fill', v >> i & 1 ? 'var(--led-on)' : 'var(--led-off)')));
+    led.setAttribute('aria-label', 'Anzeige: ' + a.map(v => ZEICHEN[v] ?? '?').join(''));
+  }
+
+  // ---- Tasten
+  const LAYOUT = [['0', '1', '2', '3'], ['4', '5', '6', '7'], ['8', '9', 'out', 'inp'], ['cal', 'step', 'stp', 'run'], ['cas', 'clr', 'pc', 'acc']];
+  const tastEl = {};
+  LAYOUT.flat().forEach(k => { const d = document.createElement('div'); d.className = 'taste'; d.textContent = k.toUpperCase(); $('tasten').appendChild(d); tastEl[k] = d; });
+
+  // ---- Zustand
+  let sc = D[0], t = 0, laeuft = false, tempo = 0.25, fenster = 20000;
+  function suche(arr, x, get) { let lo = 0, hi = arr.length - 1, r = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (get(arr[m]) <= x) { r = m; lo = m + 1; } else hi = m - 1; } return r; }
+  function anzBei(x) { const i = suche(sc.anzeige, x, e => e[0]); return i < 0 ? [0, 0, 0, 0, 0, 0] : sc.anzeige[i][1]; }
+  function fmtS(us) { return (us / 1e6).toFixed(3).replace('.', ',') + ' s'; }
+
+  function phase(x) {
+    const s = anzBei(x).map(v => ZEICHEN[v] ?? '?').join('');
+    const r = s.slice(1);
+    if (r.startsWith('Fr')) return 'Eingabe erste Zelle, mit CAS bestätigen';
+    if (r.startsWith('to')) return 'Eingabe letzte Zelle, mit CAS bestätigen';
+    if (r.startsWith('SE')) return 'Senden, Zelle ' + s.slice(3);
+    if (r.startsWith('rc')) return 'Empfangen, Zelle ' + s.slice(3);
+    if (s.endsWith('rdY')) return 'fertig, Prüfsumme in Ordnung';
+    if (s.endsWith('Err')) return 'Fehler: Prüfsumme oder Kopf falsch';
+    if (/^⊓  _+ *$/.test(s)) return 'CAS wird gehalten: nach 1 s Bereich wählen';
+    if (/^.  -+ *$/.test(s)) return sc.richtung === 'pi' ? 'wartet auf Daten vom Pi' : 'Anlauf, gleich geht es los';
+    if (s === '⊓     ') return 'CAS gedrückt';
+    if (s === '⊔     ') return 'CAL gedrückt';
+    if (s.startsWith('P')) return 'normaler Betrieb';
+    return '';
+  }
+
+  function zeichne() {
+    zeigeAnzeige(anzBei(t));
+    for (const k in tastEl) tastEl[k].classList.toggle('an', sc.tasten.some(([n, a, b]) => n === k && a <= t && t < b));
+    const ph = phase(t);
+    const bi = suche(sc.bytes, t, b => b.a);
+    const by = bi >= 0 && t <= sc.bytes[bi].b + 3000 ? sc.bytes[bi] : null;
+    $('zustand').innerHTML = (ph ? `<b>${ph}</b>` : '') + (by ? ` · Byte ${bi + 1}/${sc.bytes.length}: ${by.name} = ${by.v.toString(16).toUpperCase().padStart(2, '0')}` : '');
+    $('zeit').textContent = fmtS(t - sc.t0);
+    $('regler').value = Math.round((t - sc.t0) / (sc.t1 - sc.t0) * 1000);
+    zeichneUeber(); zeichneLupe();
+  }
+
+  // ---- Canvas-Hilfen
+  function bereit(cv) {
+    const r = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.height / (cv._r || 1);
+    if (cv._w !== w || cv._r !== r) { cv._h = cv._h || cv.height; cv.width = w * r; cv.height = cv._h * r; cv.style.height = cv._h + 'px'; cv._w = w; cv._r = r; }
+    const c = cv.getContext('2d'); c.setTransform(r, 0, 0, r, 0, 0); c.clearRect(0, 0, w, cv._h); return [c, w, cv._h];
+  }
+
+  function zeichneUeber() {
+    const [c, w, h] = bereit($('ueber')); const L = 8, R = 8, B = w - L - R;
+    const x = v => L + (v - sc.t0) / (sc.t1 - sc.t0) * B;
+    c.font = '500 11px ' + css('--font-mono'); c.textBaseline = 'middle';
+    // Tasten
+    c.fillStyle = css('--muted'); c.fillText('Tasten', L, 12);
+    sc.tasten.forEach(([n, a, b]) => {
+      c.fillStyle = css('--led-on'); c.fillRect(x(a), 22, Math.max(2, x(b) - x(a)), 12);
+      c.fillStyle = css('--ink'); c.fillText(n.toUpperCase(), x(a), 44);
+    });
+    // Pulse
+    c.fillStyle = css('--muted'); c.fillText('P1.7 Low-Pulse', L, 64);
+    sc.pulse.forEach(p => { c.fillStyle = p.bit ? css('--one') : css('--zero'); c.fillRect(x(p.a), 74, Math.max(1, x(p.b) - x(p.a)), 30); });
+    // Achse
+    c.strokeStyle = css('--rule'); c.beginPath(); c.moveTo(L, 110.5); c.lineTo(w - R, 110.5); c.stroke();
+    c.fillStyle = css('--muted'); c.textBaseline = 'alphabetic';
+    const dauer = (sc.t1 - sc.t0) / 1e6, schritt = dauer > 4 ? 1 : 0.5;
+    for (let s = 0; s <= dauer; s += schritt) { const xx = x(sc.t0 + s * 1e6); c.fillRect(xx, 108, 1, 5); }
+    // Cursor + Lupenfenster
+    c.fillStyle = css('--wire'); c.globalAlpha = .15; c.fillRect(x(t - fenster / 2), 18, Math.max(2, x(t + fenster / 2) - x(t - fenster / 2)), 90); c.globalAlpha = 1;
+    c.fillRect(x(t) - 1, 16, 2, 94);
+  }
+
+  function zeichneLupe() {
+    const [c, w, h] = bereit($('lupe')); const L = 64, R = 10, B = w - L - R;
+    const a0 = t - fenster / 2, a1 = t + fenster / 2, x = v => L + (v - a0) / fenster * B;
+    const yI = 26, yH = 74, yL = 124, yB = 168;
+    c.font = '500 11px ' + css('--font-mono'); c.textBaseline = 'middle';
+    c.fillStyle = css('--muted');
+    c.fillText('Interrupt', 4, yI); c.fillText('P1.7', 4, (yH + yL) / 2); c.fillText('Byte', 4, yB);
+    c.fillText('high', 32, yH); c.fillText('low', 36, yL);
+    // Interrupts
+    const i0 = Math.max(0, suche(sc.isr, a0 - 400, e => e[0]));
+    c.fillStyle = css('--isr');
+    for (let i = i0; i < sc.isr.length && sc.isr[i][0] <= a1; i++) {
+      const [s, d] = sc.isr[i]; c.fillRect(x(s), yI - 9, Math.max(1.5, x(s + d) - x(s)), 18);
+      if (fenster <= 20000) { c.save(); c.fillStyle = css('--muted'); c.fillText(d + ' µs', x(s) + Math.max(2, x(s + d) - x(s)) + 3, yI); c.restore(); }
+    }
+    // Pulse als Flächen
+    const p0 = Math.max(0, suche(sc.pulse, a0 - 2000, p => p.a));
+    for (let i = p0; i < sc.pulse.length && sc.pulse[i].a <= a1; i++) {
+      const p = sc.pulse[i]; if (p.b < a0) continue;
+      c.fillStyle = p.bit ? css('--one') : css('--zero'); c.globalAlpha = .22;
+      c.fillRect(x(p.a), yH, x(p.b) - x(p.a), yL - yH); c.globalAlpha = 1;
+      if (fenster <= 50000) {
+        c.fillStyle = p.bit ? css('--one') : css('--zero'); c.textAlign = 'center';
+        c.font = '600 13px ' + css('--font-mono'); c.fillText(p.bit, (x(p.a) + x(p.b)) / 2, yH - 12);
+        if (fenster <= 20000) { c.font = '500 10px ' + css('--font-mono'); c.fillStyle = css('--muted'); c.fillText(p.d, (x(p.a) + x(p.b)) / 2, yL + 12); }
+        c.font = '500 11px ' + css('--font-mono'); c.textAlign = 'start';
+      }
+    }
+    // Leitung
+    c.strokeStyle = css('--wire'); c.lineWidth = 2; c.beginPath();
+    let k = suche(sc.kanten, a0, e => e[0]); let lvl = k >= 0 ? sc.kanten[k][1] : 1;
+    c.moveTo(L, lvl ? yH : yL);
+    for (let i = k + 1; i < sc.kanten.length && sc.kanten[i][0] <= a1; i++) {
+      const [tt, l] = sc.kanten[i]; c.lineTo(x(tt), lvl ? yH : yL); c.lineTo(x(tt), l ? yH : yL); lvl = l;
+    }
+    c.lineTo(w - R, lvl ? yH : yL); c.stroke(); c.lineWidth = 1;
+    // Bytes
+    if (fenster <= 200000) {
+      const b0 = Math.max(0, suche(sc.bytes, a0 - 20000, b => b.a));
+      for (let i = b0; i < sc.bytes.length && sc.bytes[i].a <= a1; i++) {
+        const b = sc.bytes[i]; if (b.b < a0) continue;
+        const xa = Math.max(L, x(b.a)), xb = Math.min(w - R, x(b.b));
+        c.strokeStyle = css('--rule'); c.beginPath(); c.moveTo(xa, yB - 10.5); c.lineTo(xa, yB + 10.5); c.moveTo(xa, yB + .5); c.lineTo(xb, yB + .5); c.moveTo(xb, yB - 10.5); c.lineTo(xb, yB + 10.5); c.stroke();
+        const txt = b.v.toString(16).toUpperCase().padStart(2, '0') + (xb - xa > 120 ? '  ' + b.name : '');
+        if (xb - xa > 26) { c.fillStyle = css('--ink'); c.textAlign = 'center'; c.fillText(txt, (xa + xb) / 2, yB - 9); c.textAlign = 'start'; }
+      }
+    }
+    // Skala
+    c.fillStyle = css('--muted'); c.strokeStyle = css('--rule'); c.textAlign = 'center';
+    const st = fenster <= 5000 ? 500 : fenster <= 20000 ? 2000 : fenster <= 50000 ? 5000 : fenster <= 200000 ? 20000 : 100000;
+    for (let v = Math.ceil(a0 / st) * st; v <= a1; v += st) {
+      const xx = x(v); c.fillRect(xx, 192, 1, 5);
+      const rel = (v - t) / 1000; c.fillText((rel > 0 ? '+' : '') + rel.toFixed(rel % 1 ? 1 : 0).replace('.', ',') + ' ms', xx, 205);
+    }
+    c.textAlign = 'start';
+    c.fillStyle = css('--ink'); c.fillRect(x(t) - .5, 6, 1, 186);
+  }
+
+  // ---- Messwerte
+  function messwerte() {
+    const k = sc.pulse.filter(p => p.bit).map(p => p.d), g = sc.pulse.filter(p => !p.bit).map(p => p.d);
+    const isrD = sc.isr.map(e => e[1]);
+    const ab = []; for (let i = 1; i < sc.isr.length; i++) ab.push(sc.isr[i][0] - sc.isr[i - 1][0]);
+    ab.sort((a, b) => a - b);
+    const erster = sc.pulse.length ? sc.pulse[0].a : sc.t0, letzter = sc.pulse.length ? sc.pulse[sc.pulse.length - 1].b : sc.t0;
+    const w = [
+      ['kurze Pulse', k.length ? `${Math.min(...k)}–${Math.max(...k)} µs` : '–'],
+      ['lange Pulse', g.length ? `${Math.min(...g)}–${Math.max(...g)} µs` : '–'],
+      ['Interrupt-Dauer', `${Math.min(...isrD)}–${Math.max(...isrD)} µs`],
+      ['Interrupt-Abstand', `${(ab[ab.length >> 1] / 1000).toFixed(2).replace('.', ',')} ms`],
+      ['Übertragung', `${sc.bytes.length} Byte in ${((letzter - erster) / 1e6).toFixed(2).replace('.', ',')} s`],
+    ];
+    $('werte').innerHTML = w.map(([a, b]) => `<div class="wert"><span class="k">${a}</span><span class="v">${b}</span></div>`).join('');
+    $('mess-info').textContent = sc.info;
+    $('ueber-info').textContent = fmtS(sc.t1 - sc.t0) + ' simuliert';
+    $('mess-erkl').innerHTML = sc.richtung === 'cp1'
+      ? 'Hier sendet der CP1. Fällt ein Interrupt in einen Low-Puls, wird der Puls um dessen Dauer länger. Der Pi entscheidet deshalb erst bei <code>0,9 ms</code>: Kurze Pulse bleiben darunter, lange darüber.'
+      : 'Hier sendet der Pi, mit etwas Zittern auf jeder Flanke. Der CP1 zählt die Low-Zeit in Schritten von 15 µs. Ein Interrupt mitten im Puls verschluckt bis zu 260 µs, deshalb liegt seine Schwelle bei <code>0,72 ms</code>, zwischen 0,4 und 1,2 ms.';
+  }
+
+  // ---- Bedienung
+  function waehle(i) {
+    sc = D[i]; letzteAnz = null;
+    document.querySelectorAll('.tab').forEach((b, j) => b.setAttribute('aria-selected', j === i ? 'true' : 'false'));
+    const mitte = sc.pulse.length ? sc.pulse[Math.floor(sc.pulse.length * 0.35)].a : sc.t0;
+    t = mitte; laeuft = false; $('play').textContent = '▶ Abspielen';
+    messwerte(); zeichne();
+  }
+  D.forEach((s, i) => { const b = document.createElement('button'); b.className = 'tab'; b.type = 'button'; b.setAttribute('role', 'tab'); b.textContent = s.titel; b.onclick = () => waehle(i); $('tabs').appendChild(b); });
+  [[5000, '5 ms'], [20000, '20 ms'], [50000, '50 ms'], [200000, '200 ms'], [1000000, '1 s']].forEach(([v, n]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = n; b.setAttribute('aria-pressed', v === fenster ? 'true' : 'false');
+    b.onclick = () => { fenster = v; document.querySelectorAll('#zoomwahl button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false')); zeichne(); };
+    $('zoomwahl').appendChild(b);
+  });
+  $('tempo').onchange = e => { tempo = +e.target.value; };
+  $('regler').oninput = e => { t = sc.t0 + (+e.target.value / 1000) * (sc.t1 - sc.t0); zeichne(); };
+  let zuletzt = 0;
+  function tick(ts) {
+    if (!laeuft) return;
+    const dt = zuletzt ? Math.min(100, ts - zuletzt) : 0; zuletzt = ts;
+    t += dt * 1000 * tempo;
+    if (t >= sc.t1) { t = sc.t1; laeuft = false; $('play').textContent = '▶ Abspielen'; }
+    zeichne(); if (laeuft) requestAnimationFrame(tick);
+  }
+  $('play').onclick = () => {
+    laeuft = !laeuft; $('play').textContent = laeuft ? '❚❚ Pause' : '▶ Abspielen';
+    if (laeuft) { if (t >= sc.t1 - 1000) t = sc.t0; zuletzt = 0; requestAnimationFrame(tick); }
+  };
+  const ueb = $('ueber'); let zieht = false;
+  function springe(e) { const r = ueb.getBoundingClientRect(); const f = Math.min(1, Math.max(0, (e.clientX - r.left - 8) / (r.width - 16))); t = sc.t0 + f * (sc.t1 - sc.t0); zeichne(); }
+  ueb.addEventListener('pointerdown', e => { zieht = true; ueb.setPointerCapture(e.pointerId); springe(e); });
+  ueb.addEventListener('pointermove', e => { if (zieht) springe(e); });
+  ueb.addEventListener('pointerup', () => { zieht = false; });
+  window.addEventListener('resize', zeichne);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', zeichne);
+  new MutationObserver(zeichne).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  waehle(0);
+})();
+</script>

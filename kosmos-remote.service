@@ -1,0 +1,19 @@
+[Unit]
+Description=Kosmos CP1 Fernsteuerung (Webseite Port 8049, GPIO 26)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=moosy
+Group=moosy
+SupplementaryGroups=gpio
+WorkingDirectory=/home/moosy/kosmos-cp1-toolchain
+ExecStart=/usr/bin/python3 /home/moosy/kosmos-cp1-toolchain/kosmos_remote.py serve
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+NoNewPrivileges=true
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
