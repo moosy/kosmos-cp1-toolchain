@@ -6,7 +6,9 @@ See https://de.wikipedia.org/wiki/Kosmos_CP1 for details.
 A comprehensive collection of documentation can be found at 
 http://www.8bit-homecomputermuseum.at/computer/kosmos_computer_praxis_cp1.html.
 
-Quick reference (German, 3 pages A4, firmware 4.02 with all extensions; not yet updated for 5.x): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
+Quick reference (German, 3 pages A4, firmware 5.05 with all extensions): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
+
+Firmware internals, the terminal 7/8 protocol (K78P) with NIE and FNI, jobs and flash layout: [INTERNALS.md](INTERNALS.md)
 
 This toolchain consists of the following tools:
 
@@ -121,9 +123,9 @@ NIE protocol (terminal 8 = P1.7, handled in the CP1's timer interrupt every 2.56
   CAS 17, CLR 18, PC 19, ACC 20; row = (code + 7) / 4, bit = (code + 7) % 4.
 
 FNI protocol (interrupt off): terminal 7 = T (P1.6, clock), terminal 8 = D (P1.7, data).
-- Per bit the Pi pulls T low (at least 40 µs); the CP1 holds T low as long as it is busy
-  (erasing the flash may take a while). Then T is high for at least 40 µs. D low = 0, LSB first;
-  the sender sets D, the CP1 samples about every 15 µs.
+- Per bit the Pi pulls T low (at least 80 µs); the CP1 holds T low as long as it is busy
+  (erasing the flash may take a while). Then T is high for at least 100 µs. D low = 0, LSB first;
+  the sender sets D, the CP1 polls T about every 22.5 µs (details in INTERNALS.md).
 - Head [job, bank, first cell, count] + CRC-8, then blocks up to the next 4-cell boundary
   (2 bytes per cell) + CRC-8 (polynomial $07, init 0). After each block the receiver answers
   one bit: 1 = ok, 0 = repeat (3 tries on the CP1 side).
