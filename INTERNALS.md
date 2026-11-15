@@ -1,6 +1,6 @@
 # Kosmos CP1 – firmware 5.x internals
 
-This document describes how the extended CP1 firmware (5.00–5.05) talks to the outside world,
+This document describes how the extended CP1 firmware (5.00–5.07) talks to the outside world,
 mainly the **K78P** – the *terminal 7 and 8 protocol* between the CP1 and a Raspberry Pi – and the
 data structures behind it. It is meant for people who want to write their own tools, or just want
 to understand what happens on the two wires.
@@ -16,8 +16,9 @@ Contents:
 4. NIE – normal, interrupt enabled (terminal 8 only)
 5. FNI – fast, no interrupt (terminals 7 + 8)
 6. Jobs (F_JOB)
-7. SPI flash layout (banks, directory, names, display)
+7. SPI flash layout (banks, directory, names, pictures, display)
 8. Keys, display, segment codes
+8a. Commands added in 5.x (immediate values, SEF, own bank)
 9. Reset
 10. Lessons learned
 
@@ -89,7 +90,8 @@ both halves, an interrupt can come at any time.
 | 0x45 | stack pointer of the CP1 stack (JSR/RET/PSH/POP/PSK) |
 | 0x46 | RC_FLAG (NIE state) |
 | 0x47 | OVF switch |
-| 0x48–0x5F | CP1 stack, 24 levels |
+| 0x48–0x5E | CP1 stack, 23 levels (24 before 5.06) |
+| 0x5F | S_PBANK (5.06): bank the running program was loaded from, 0 = none (typed in) |
 | 0x60–0x6F | F_NAME: bank name, 16 ASCII characters |
 | 0x70–0x77 | F_PUF: flash buffer |
 | 0x78–0x7F | NIE buffers / FNI block buffer |
@@ -301,12 +303,19 @@ Sector layout:
 | 0x210 | generation (+1 per write; the newer sector wins) |
 | 0x211 | 00 = valid |
 | 0x212 | 00 = bank has a name area (set by `$29`); the copy then runs to 0x5FF, otherwise it stops at 0x217 |
-| 0x300–0x5F7 | name area: entries `[length, cell, ASCII name]`, FF = end (~70 names of 8 characters) |
+| 0x300–0x5F7 | name area: entries `[length, cell, ASCII name]`, FF = end (~70 names of 8 characters); pictures from the top |
+| 0x500–0x5F7 | pictures for SEF (5.06), packed directly below 0x5F8, growing down into the name area |
 | 0x5F8–0x5FD | own 6-digit display for browsing (5.05): segment patterns, FF = none |
 
 The name area is the "name table" of the editor (`035=display_loop`): cell numbers with labels for
 the disassembler. The firmware itself never interprets it, it only keeps it when the bank is
 rewritten from the keyboard.
+
+Pictures (5.06): the firmware only knows "SEF xxx reads the 6 bytes at sector offset 0x500 + xxx". The
+Pi side packs the pictures without gaps directly below the own display (0x5F8), so names (from 0x300
+upwards) and pictures (from 0x5F7 downwards) share the space. Each picture also gets an entry in the
+name list, `[length, SEF position, "@" + name]`, so that the editor gets the picture names back;
+older readers skip these entries. Pictures shorter than 6 bytes are padded with 0 (dark).
 
 
 ## 8. Keys, display, segment codes
@@ -317,12 +326,47 @@ The interrupt remembers one key per row only – two keys in the same row cannot
 
 Segment bits: a = 1, b = 2, c = 4, d = 8, e = 16, f = 32, g = 64, decimal point = 128.
 
-5.05 contains an ASCII → segment table (0x20..0x5F, lower case mapped to upper case, unknown
-characters dark) used when browsing banks without an own display. The same table is used by
+5.05 contains an ASCII → segment table (since 5.06 only 0x2C..0x5F – `, - . /`, digits, `: ; < = > ? @`,
+letters, `[ \ ] ^ _`; lower case mapped to upper case, everything else dark) used when browsing banks without an own display. The same table is used by
 `anzeige_aus_text(..., wie_firmware=True)` in `kosmos_remote.py` for the preview.
 
 Display headers of the firmware: `bAn ___` bank, `Fr ___` / `to ___` range, `d5t ___` destination,
 `5to nnn` storing, `LdA nnn` loading, `bot nnn` autoboot, `Q-Z` FNI direction, `rdY`, `Err`.
+
+
+## 8a. Commands added in 5.x
+
+| Code | Mnemonic | Since | Meaning |
+|---|---|---|---|
+| 25 | ODR xxx | 3.0 | accumulator OR cell xxx |
+| 26 | OVF x | 3.0 | x = 0: ADD/SUB wrap around (no F 006), else overflow error on |
+| 27 | SEG xxx | 3.0 | cells xxx..xxx+5 as segment patterns on the display, SEG 255 clears |
+| 28–30 | AS1/AS2/AS3 xxx | 3.0 | hundreds/tens/ones of the accumulator as segment pattern into cell xxx |
+| 31 | TST | 3.0 | wait for a digit key |
+| 32/33 | JSR xxx / RET | 3.0 | subroutine |
+| 34/35 | PSH / POP | 3.0 | accumulator to/from the stack |
+| 36 | PSK xxx | 4.0 | push constant |
+| 37/38 | FRD xxx / FWR xxx | 4.0 | stack: bank, first cell, count; read/write flash ↔ memory from cell xxx |
+| 39 | TSE | 4.02 | digit pressed since the last TSE, else 255 (does not wait) |
+| 40–46 | ADD# SUB# VGL# VGR# VKL# UND# ODR# | 5.06 | like 07/08/10/12/13/15/25, but xxx is the value itself (assembler: `ADD #1`) |
+| 47 | SEF xxx | 5.06 | 6 picture bytes from position xxx of the program's own bank onto the display |
+
+Details:
+- **40–46** jump into the original ADD/SUB/VGL/VGR/VKL routines right behind their operand-cell check;
+  `MOVX A,@R1` there then reads the argument of the instruction itself. OVF, the comparison result and
+  F 005 (accumulator not data) behave exactly as with the cell variants; ADD # leaves the comparison
+  result alone, as ADD does.
+- **SEF xxx**: reads from the bank the program was loaded from (S_PBANK, set by every successful bank
+  load: CAL, autoboot, Pi job $04; the web page sets it via NIE `03 5F bb` when it loads the editor
+  program). No own bank (typed in) → dark, no error. `SEF 248` = the bank's own browse display,
+  `SEF 254` = position taken from the accumulator (scrolling text / animation in a loop),
+  `SEF 255` clears the display. About 12 ms per picture (flash sector search + 6 bytes).
+- **FRD/FWR with bank 000** (5.07) = the program's own bank (S_PBANK); without own bank F 003 (before
+  5.07: FRD read the directory, FWR gave F 003). Typical uses: reload all start values with
+  `PSK 0 / PSK first / PSK n / FRD first` (4 cells instead of one AKO/ABS pair per variable), or keep a
+  high score in the program's own bank. FWR rewrites the whole sector including names and pictures
+  (a few seconds), so use it at the end of a game, not in the loop.
+- The CP1 stack has 23 levels since 5.06 (the 24th byte holds S_PBANK).
 
 
 ## 9. Reset
@@ -350,3 +394,6 @@ A hardware reset line would not clear the 8155 RAM; the original `init` does tha
   clocking after the CP1 had given up – the resulting bit storm on D tripped the NIE emergency stop.
 - **Reset F_JOB before every attempt.** Otherwise the $EE of a failed attempt is read as "refused".
 - On the 8049 a conditional jump uses the page of its *operand byte* (pc + 1) – matters at page ends.
+- **Check every boundary of the image, not just the one you expect.** While building 5.06 the code of
+  half A ran past 0xFFF into a region the build never looked at; the image would simply have lacked
+  that code. The build now checks the whole range.

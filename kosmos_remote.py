@@ -74,6 +74,7 @@ def segtext(seg):
 
 F_JOB, F_BANK, F_SEKT, F_OFH, F_OFL, F_NAME = 0x26, 0x2c, 0x2d, 0x2e, 0x2f, 0x60
 F_ANF, F_ANZ, F_START, MEM_SIZE = 0x3c, 0x3d, 0x3e, 0x3b
+S_PBANK = 0x5f                            # 5.06: Bank, aus der das Programm geladen wurde (Bilder für SEF)
 
 
 def name_text(b):
@@ -360,7 +361,9 @@ class Leitung:
         mit = len(meta) >= 0x400 and meta[0x12] == 0
         namen = namen_aus_bytes(meta[0x100:0x400]) if mit else {}
         anzeige = anzeige_aus_bytes(meta[0x100:0x400]) if mit else None
-        return {'zellen': self._zellen(d[:512], 0), 'name': name_text(meta[:16]), 'namen': namen, 'anzeige': anzeige}
+        bilder = bilder_aus_bytes(meta[0x100:0x400]) if mit else []
+        return {'zellen': self._zellen(d[:512], 0), 'name': name_text(meta[:16]), 'namen': namen, 'anzeige': anzeige,
+                'bilder': bilder}
 
     def bank_sichern(self, bank, von=0, bis=255):
         """Bank direkt aus dem Flash; das RAM des CP1 bleibt unberührt. Ganze Bank: Komplettdump ($25) mit Name.
@@ -370,14 +373,14 @@ class Leitung:
             return k['zellen'], k['name']
         return self._zellen(self.fni(0x24, von, bis - von + 1, bank=bank), von), None
 
-    def bank_einspielen(self, bank, zellen, name=None, start=None, namen=None, anzeige=None):
+    def bank_einspielen(self, bank, zellen, name=None, start=None, namen=None, anzeige=None, bilder=None):
         """Zellen direkt in eine Bank (FNI $22/$23); Rest der Bank bleibt; start != None -> Verzeichnis.
         namen (dict, auch leer) -> $29 (5.03): Namensbereich 0x300..0x5FF wird mitgeschrieben (Name dann Pflicht)"""
         if not 1 <= bank <= 255: raise ValueError('Bank 1..255')
         von, bis = min(zellen), max(zellen)
         daten = self._bytes(zellen, von, bis)
-        if namen is not None or anzeige is not None:
-            job, daten, name = 0x29, daten + namen_bytes(namen or {}, anzeige), (name or '')
+        if namen is not None or anzeige is not None or bilder:
+            job, daten, name = 0x29, daten + namen_bytes(namen or {}, anzeige, bilder), (name or '')
         else:
             job = 0x23 if name is not None else 0x22
         self.fni(job, von, bis - von + 1, bank=bank, daten=daten, start=255 if start is None else start, name=name)
@@ -403,18 +406,130 @@ NAMEN_PLATZ = 0x300                       # 5.03: Namensbereich 0x300..0x5FF jed
 ANZEIGE_POS = 0x2F8                       # 5.05: eigene 6-stellige Anzeige der Bank bei 0x5F8..0x5FD
 
 
-def namen_bytes(namen, anzeige=None):
-    """{adresse: name} (+ 6 Segmentbytes Anzeige) -> 768 Byte: je Eintrag Länge, Adresse, Name (ASCII); FF = Ende;
+BILD_BASIS = 0x200                        # 5.06: SEF xxx liest Sektor 0x500 + xxx = Namensbereich + 0x200 + xxx
+
+
+def bilder_layout(bilder):
+    """[(name, bytes)] -> (Anfang im Namensbereich, {name: SEF-Position}). Die Bilder liegen lückenlos direkt vor der
+    eigenen Anzeige (0x5F8), die Namen wachsen von unten (0x300) dagegen."""
+    gesamt = sum(len(b) for _, b in bilder)
+    if gesamt > ANZEIGE_POS - BILD_BASIS:
+        raise ValueError(f'Bilder zu groß: {gesamt} Byte, Platz für {ANZEIGE_POS - BILD_BASIS}')
+    anfang, pos, n = ANZEIGE_POS - gesamt, {}, ANZEIGE_POS - gesamt
+    for name, b in bilder:
+        pos[name] = n - BILD_BASIS; n += len(b)
+    return anfang, pos
+
+
+def namen_bytes(namen, anzeige=None, bilder=None):
+    """{adresse: name} (+ 6 Segmentbytes Anzeige, + Bilder [(name, bytes)]) -> 768 Byte: je Eintrag Länge, Adresse,
+    Name (ASCII), Bilder als Einträge „@name“ mit ihrer SEF-Position; FF = Ende. Bilder liegen vor 0x5F8;
     die letzten 8 Byte: Anzeige (6 Byte, FF = keine) + FF FF"""
+    bilder = bilder or []
+    anfang, pos = bilder_layout(bilder)
+    eintraege = [(a & 0xFF, n.encode('ascii')[:63]) for a, n in sorted(namen.items())] + \
+                [(pos[n], b'@' + n.encode('ascii')[:62]) for n, _ in bilder]
     out = bytearray()
-    for a, n in sorted(namen.items()):
-        b = n.encode('ascii')[:63]
-        if len(out) + 2 + len(b) > ANZEIGE_POS - 1:
-            raise ValueError(f'Namensbereich voll ({ANZEIGE_POS} Byte) – ab {a:03d}={n} passt nichts mehr')
-        out += bytes([len(b), a & 0xFF]) + b
-    out += b'\xff' * (ANZEIGE_POS - len(out))
+    for a, b in eintraege:
+        if len(out) + 2 + len(b) > anfang - 1:
+            raise ValueError(f'Namensbereich voll ({anfang} Byte neben {ANZEIGE_POS - anfang} Byte Bildern) – '
+                             f'ab {b.decode()} passt nichts mehr')
+        out += bytes([len(b), a]) + b
+    out += b'\xff' * (anfang - len(out))
+    for _, b in bilder: out += b
     anz = bytes(anzeige)[:6] if anzeige else b'\xff' * 6
     return bytes(out) + anz.ljust(6, b'\x00') + b'\xff\xff'
+
+
+def bilder_aus_bytes(d):
+    """Namensbereich -> [(name, bytes)] in Positionsreihenfolge"""
+    eintr, i = [], 0
+    d = bytes(d[:ANZEIGE_POS])
+    while i + 2 <= len(d) and 1 <= d[i] <= 63:
+        n, a = d[i], d[i + 1]
+        roh = d[i + 2:i + 2 + n]
+        if roh[:1] == b'@':
+            try:
+                name = roh[1:].decode('ascii')
+                if NAME_RE.match(name): eintr.append((a, name))
+            except UnicodeDecodeError:
+                pass
+        i += 2 + n
+    eintr.sort()
+    out = []
+    for k, (a, name) in enumerate(eintr):
+        ende = eintr[k + 1][0] if k + 1 < len(eintr) else ANZEIGE_POS - BILD_BASIS
+        out.append((name, d[BILD_BASIS + a:BILD_BASIS + ende]))
+    return out
+
+
+def bild_aus_text(text):
+    """„MInEn“ (wie das Anzeige-Feld, „.“ = Punkt der Stelle davor, beliebig lang) oder „#118,121,56“ -> Bytes,
+    mindestens 6 (mit dunklen Stellen aufgefüllt)"""
+    text = text.rstrip('\r\n')                # Leerzeichen zählen (Lauftexte)
+    if text.strip().startswith('#'):
+        text = text.strip()
+        werte = [int(x) for x in re.split(r'[,\s]+', text[1:].strip()) if x]
+        if any(not 0 <= w <= 255 for w in werte): raise ValueError(f'Bild {text}: Werte 0..255')
+        out = werte
+    else:
+        out = []
+        for ch in text:
+            if ch == '.' and out and not out[-1] & 0x80:
+                out[-1] |= 0x80; continue
+            out.append(SEG_ZEICHEN.get(ch, SEG_ZEICHEN.get(ch.upper(), 0)))
+    return bytes(out + [0] * max(0, 6 - len(out)))
+
+
+def bild_text(b):
+    t = text_aus_anzeige(b)
+    for v in (t.rstrip(' '), t):
+        if '?' not in v and bild_aus_text(v) == bytes(b): return v
+    return '#' + ','.join(str(x) for x in b)
+
+
+def bilder_lesen(text):
+    """Zeilen „name=MInEn“ / „name=#1,2,3“ -> [(name, bytes)]"""
+    out, gesehen = [], set()
+    for z in (text or '').splitlines():
+        if not z.strip() or z.strip().startswith('//'): continue
+        name, _, wert = z.lstrip().partition('=')
+        name = name.strip().lstrip('@')
+        if not NAME_RE.match(name) or not _: raise ValueError(f'Bild „{z}“: erwartet name=Text')
+        if name in gesehen: raise ValueError(f'Bild {name} doppelt')
+        gesehen.add(name); out.append((name, bild_aus_text(wert)))
+    return out
+
+
+def bilder_text(bilder):
+    return ''.join(f'{n}={bild_text(b)}\n' for n, b in bilder)
+
+
+SEF_RE = re.compile(r'^(\s*(?:\d{1,3}:?\s+)?(?:SEF|AKO|PSK|(?:ADD|SUB|VGL|VGR|VKL|UND|ODR)\s*#)\s*)([A-Za-z_]\w*)(?:\+(\d+))?',
+                    re.I | re.M)                # Bildnamen als Wert: SEF titel, AKO lauf, ADD #lauf, SEF lauf+3
+
+
+def sef_aufloesen(quelltext, bilder):
+    """„SEF titel“ / „SEF titel+3“ / „ADD #lauf“ -> Position im Bilderbereich (für den Assembler)"""
+    if not bilder: return quelltext
+    _, pos = bilder_layout(bilder)
+    def ersetze(m):
+        if m.group(2) not in pos: return m.group(0)
+        return m.group(1) + str(pos[m.group(2)] + int(m.group(3) or 0))
+    return SEF_RE.sub(ersetze, quelltext)
+
+
+def sef_benennen(listing, bilder):
+    """Disassembler-Ausgabe: „SEF 230“ -> „SEF titel“ (bzw. titel+3)"""
+    if not bilder: return listing
+    _, pos = bilder_layout(bilder)
+    starts = sorted((p, n, len(b)) for (n, b), p in zip(bilder, [pos[n] for n, _ in bilder]))
+    def ersetze(m):
+        x = int(m.group(2))
+        for p, n, l in starts:
+            if p <= x < p + l: return m.group(1) + (n if x == p else f'{n}+{x - p}') + ' ' * max(0, 3 - len(n))
+        return m.group(0)
+    return re.sub(r'(SEF )(\d{3})', ersetze, listing)
 
 
 def anzeige_aus_bytes(d):
@@ -438,7 +553,9 @@ def anzeige_aus_text(text, wie_firmware=False):
     wie_firmware: so, wie asc_seg (5.05) einen Banknamen ohne eigene Anzeige zeigt (nur Großbuchstaben, O = o,
     jedes Zeichen eine Stelle)"""
     if wie_firmware:
-        return bytes(([0x5c if c == 'O' else 0x80 if c in '.,' else SEG_ZEICHEN.get(c, 0) for c in text.upper()] + [0] * 6)[:6])
+        # 5.06: Tabelle der Firmware beginnt bei „,“ – Zeichen davor (Leer ! " # $ % & ' ( ) * +) bleiben dunkel
+        return bytes(([0 if c < ',' else 0x5c if c == 'O' else 0x80 if c in '.,' else SEG_ZEICHEN.get(c, 0)
+                       for c in text.upper()] + [0] * 6)[:6])
     out = []
     for ch in text:
         if ch == '.' and out and not out[-1] & 0x80:
@@ -476,8 +593,12 @@ def _php(name):
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), name)
 
 
-def disasm(zellen, namen=None):
-    """Listing; namen {adresse: name} ersetzen label_N/wert_N"""
+def disasm(zellen, namen=None, bilder=None):
+    """Listing; namen {adresse: name} ersetzen label_N/wert_N, bilder [(name, bytes)] die Zahlen hinter SEF"""
+    return sef_benennen(_disasm(zellen, namen), bilder)
+
+
+def _disasm(zellen, namen=None):
     d = tempfile.mkdtemp()
     try:
         js = os.path.join(d, 'prog.json')
@@ -509,11 +630,12 @@ def asm(quelltext):
 MARKE_RE = re.compile(r'^(\s*)>([^\s:]+):.*$')
 
 
-def assemblieren(quelltext, namen_alt=''):
+def assemblieren(quelltext, namen_alt='', bilder_text_=''):
     """Assemblieren + Relabel: Zeilennummern in den Markenzeilen des Quelltexts auf die echten Adressen setzen
     (sonst bleibt der Text, wie er ist). Zuweisungstabelle = Marken des Quelltexts + Einträge von Hand, deren
     Name keine Marke ist. -> dict(zellen, quelltext, namen, von, bis)"""
-    zellen, ausgabe = asm(quelltext)
+    bilder = bilder_lesen(bilder_text_)
+    zellen, ausgabe = asm(sef_aufloesen(quelltext, bilder))
     marken = {}
     for z in ausgabe.splitlines():
         m = re.match(r'^>([^\s:]+):\s+(\d{3})\s*$', z)
@@ -529,7 +651,7 @@ def assemblieren(quelltext, namen_alt=''):
         if n not in marken and a not in namen:
             namen[a] = n
     belegt = [n for n, v in zellen.items() if v != (0, 0)]
-    return {'zellen': zellen, 'quelltext': '\n'.join(zeilen), 'namen': namen,
+    return {'zellen': zellen, 'quelltext': '\n'.join(zeilen), 'namen': namen, 'bilder': bilder,
             'von': 0, 'bis': max(belegt or [0])}
 
 
@@ -571,28 +693,31 @@ def serve(port):
                     leitung.tasten(req['tasten'])
                     return self.antwort(200, {'ok': True})
                 if self.path == '/api/assemblieren':
-                    r = assemblieren(req['quelltext'], req.get('namen', ''))
+                    r = assemblieren(req['quelltext'], req.get('namen', ''), req.get('bilder', ''))
                     return self.antwort(200, {'quelltext': r['quelltext'], 'namen': namen_text(r['namen']),
+                                              'bilder': bilder_text(r['bilder']),
                                               'zellen': {f'{k:03d}': list(v) for k, v in sorted(r['zellen'].items())},
                                               'bis': r['bis']})
                 if self.path == '/api/anzeige_vorschau':
                     return self.antwort(200, {'seg': list(anzeige_aus_text(req.get('text', ''), bool(req.get('wie_firmware'))))})
                 if self.path == '/api/disasm':
                     z = {int(k): tuple(v) for k, v in req['zellen'].items()}
-                    return self.antwort(200, {'listing': disasm(z, namen_lesen(req.get('namen', '')))})
+                    return self.antwort(200, {'listing': disasm(z, namen_lesen(req.get('namen', '')), bilder_lesen(req.get('bilder', '')))})
                 if self.path == '/api/laden':
                     if 'quelltext' in req:
-                        r = assemblieren(req['quelltext'], req.get('namen', ''))
+                        r = assemblieren(req['quelltext'], req.get('namen', ''), req.get('bilder', ''))
                         zellen = {n: v for n, v in r['zellen'].items() if n <= r['bis']}   # bis zur letzten belegten Zelle
                     else:
                         zellen = {int(k): tuple(v) for k, v in req['zellen'].items()}
                     voll = {i: zellen.get(i, (0, 0)) for i in range(min(zellen), max(zellen) + 1)}
                     r = leitung.laden(voll)
+                    if req.get('pbank'):            # 5.06: SEF zeigt die Bilder dieser Bank
+                        leitung.schreib(S_PBANK, int(req['pbank']) & 0xFF)
                     return self.antwort(200, r)
                 if self.path == '/api/speichern':
                     z = leitung.speichern(req.get('von'), req.get('bis'))
                     return self.antwort(200, {'zellen': {f'{k:03d}': list(v) for k, v in sorted(z.items())},
-                                              'listing': disasm(z, namen_lesen(req.get('namen', '')))})
+                                              'listing': disasm(z, namen_lesen(req.get('namen', '')), bilder_lesen(req.get('bilder', '')))})
                 if self.path == '/api/flash/speichern':
                     b = int(req['bank'])
                     if not 1 <= b <= 255: raise ValueError('Bank 1..255')
@@ -621,8 +746,9 @@ def serve(port):
                     namen = k['namen'] or namen_lesen(req.get('namen', ''))     # Namen aus der Bank haben Vorrang
                     return self.antwort(200, {'bank': b, 'name': k['name'], 'namen': namen_text(namen), 'namen_aus_bank': bool(k['namen']),
                                               'anzeige': text_aus_anzeige(k['anzeige']) if k['anzeige'] else '',
+                                              'bilder': bilder_text(k['bilder']),
                                               'zellen': {f'{a:03d}': list(v) for a, v in k['zellen'].items()},
-                                              'listing': disasm(k['zellen'], namen)})
+                                              'listing': disasm(k['zellen'], namen, k['bilder'])})
                 if self.path == '/api/bank/einspielen':
                     z = {int(k): tuple(v) for k, v in req['zellen'].items()}
                     st = req.get('start')
@@ -630,7 +756,8 @@ def serve(port):
                     r = leitung.bank_einspielen(int(req['bank']), z, req.get('name') or None,
                                                 None if st in (None, '') else int(st) & 255,
                                                 None if nm is None else namen_lesen(nm),
-                                                anzeige_aus_text(an) if an else None)
+                                                anzeige_aus_text(an) if an else None,
+                                                bilder_lesen(req.get('bilder', '')))
                     return self.antwort(200, r)
                 return self.antwort(404, {'fehler': 'unbekannt'})
             except (KeineAntwort, FlashFehler) as e:

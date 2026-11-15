@@ -1,5 +1,5 @@
-; Umschalt-Stummel (erzeugt von gen_stummel.py, 89 Byte)
-                .org $fa7
+; Umschalt-Stummel (erzeugt von gen_stummel.py, 94 Byte)
+                .org $fa2
 zb_k_cal_vor: ANL  P1, #$ef      ; A12 = 0 -> Hälfte B
                 NOP
                 JMP  k_cal_vor
@@ -24,6 +24,9 @@ zb_k_teil: ANL  P1, #$ef      ; A12 = 0 -> Hälfte B
 zb_bl_suche: ANL  P1, #$ef      ; A12 = 0 -> Hälfte B
                 NOP
                 JMP  bl_suche
+zb_s_sef: ANL  P1, #$ef      ; A12 = 0 -> Hälfte B
+                NOP
+                JMP  s_sef
 za_s_ende: ORL  P1, #$10      ; A12 = 1 -> Hälfte A
                 NOP
                 JMP  s_ende

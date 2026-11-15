@@ -457,6 +457,28 @@ fq_g4:          CLR  A
 ;   PSK b / PSK a / PSK n / FRD r: n Zellen (0 = 256) ab Zelle a der Bank b ins RAM ab r
 ;   FWR r: umgekehrt. FWR auf Bank 0 -> F-003
 ; ---------------------------------------------------------------------
+; 5.06 s_sef: SEF xxx (aus Hälfte A, F_ANF = xxx, S_PBANK <> 0): 6 Byte ab Sektor-Offset 0x500 + xxx der
+; Programmbank -> Anzeige 0x20..0x25. S_PBANK setzt nur ein gelungenes j_laden, die Bank ist also gültig.
+; Interrupt bleibt an (wie FRD).
+s_sef:          MOV  R0, #S_PBANK
+                MOV  A, @R0
+                MOV  R0, #F_BANK
+                MOV  @R0, A
+                CALL f_zustand
+                MOV  A, R6
+                MOV  R0, #F_SEKT
+                MOV  @R0, A
+                INC  R0
+                MOV  @R0, #$05          ; F_OFH: Bilderbereich ab 0x500
+                MOV  R1, #F_ANF
+                MOV  A, @R1
+                INC  R0
+                MOV  @R0, A             ; F_OFL = xxx
+                MOV  R1, #$20
+                MOV  R2, #6
+                CALL f_lies
+                JMP  za_inc_pc
+
 sf_ok:          CALL f_da
                 JNC  sf_f010
                 CALL f_zustand
@@ -616,6 +638,8 @@ j_laden:        CALL k_flash            ; (5.05: „LdA nnn“ zeigt Hälfte A)
                 MOV  R0, #F_BANK        ; Start: Bank 0, Zelle nnn, Byte 2
                 MOV  A, @R0
                 MOV  @R0, #$00
+                MOV  R1, #S_PBANK       ; 5.06: Programmbank für SEF merken
+                MOV  @R1, A
                 MOV  R0, #F_ANF
                 MOV  @R0, A
                 CALL f_zustand

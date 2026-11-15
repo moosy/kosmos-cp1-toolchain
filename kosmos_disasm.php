@@ -54,7 +54,15 @@ $cmd = array(
   36 => "PSK",  # 36–38 nur mit Firmware 4.0 (SPI-Flash)
   37 => "FRD",
   38 => "FWR",
-  39 => "TSE"   # ab Firmware 4.02
+  39 => "TSE",  # ab Firmware 4.02
+  40 => "ADD#", # 40–46 ab Firmware 5.06: fester Wert, Ausgabe als  ADD #005
+  41 => "SUB#",
+  42 => "VGL#",
+  43 => "VGR#",
+  44 => "VKL#",
+  45 => "UND#",
+  46 => "ODR#",
+  47 => "SEF"   # ab Firmware 5.06: Bild aus Bank 255
 );
 
 $cmddesc = array(
@@ -97,7 +105,15 @@ $cmddesc = array(
   36 => "Konstante %s auf den Stapel legen (nur Firmware 4.0)",
   37 => "Flash lesen: Bank, Adresse, Anzahl vom Stapel, ins RAM ab Zelle %s (nur Firmware 4.0)",
   38 => "Flash schreiben: Bank, Adresse, Anzahl vom Stapel, aus dem RAM ab Zelle %s (nur Firmware 4.0)",
-  39 => "Zifferntaste seit dem letzten TSE in den Akku, sonst 255; wartet nicht (%s; nur Firmware 4.02)"
+  39 => "Zifferntaste seit dem letzten TSE in den Akku, sonst 255; wartet nicht (%s; nur Firmware 4.02)",
+  40 => "Zum Akku den Wert %s addieren (ab Firmware 5.06)",
+  41 => "Vom Akku den Wert %s subtrahieren (ab Firmware 5.06)",
+  42 => "Prüfen, ob Akku gleich %s ist (ab Firmware 5.06)",
+  43 => "Prüfen, ob Akku größer als %s ist (ab Firmware 5.06)",
+  44 => "Prüfen, ob Akku kleiner als %s ist (ab Firmware 5.06)",
+  45 => "Akku bitweise UND %s (ab Firmware 5.06)",
+  46 => "Akku bitweise ODER %s (ab Firmware 5.06)",
+  47 => "Zellen %s bis +5 der Bilderbank 255 als Segmentmuster anzeigen (255 = Anzeige löschen; ab Firmware 5.06)"
 );
 
 $noarg = array("HLT","RET","PSH","POP");
@@ -246,6 +262,8 @@ foreach ($in as $line => $c){
     if (!$has_line) $bline = "    ";  
     if ($has_label) $arg = $has_label;
     if (in_array($co,$noarg)) $arg = "";
+    $cozeige = $co;
+    if ($c1 > 0 && substr($co,-1) == "#"){ $cozeige = substr($co,0,-1); $arg = "#".$c2p; }
     // Marken mit Zeilennummer (nur zur Ansicht; der Assembler ignoriert sie und setzt sie mit -r neu)
     $marken = array();
     if (isset($names[$lines])) $marken[] = $names[$lines];
@@ -254,7 +272,7 @@ foreach ($in as $line => $c){
     foreach (array_unique($marken) as $mk) $btfy[] = "\n".str_pad(">$mk:", 28)."$lines";
     if (($c1>0) || ($c2>0) || array_key_exists($line,$labels) ||  array_key_exists($line,$values) || isset($names[$lines])){
       if ($has_line && !$marken) $btfy[] = "";
-      $btfy[] = str_pad("  $bline$co $arg ",30)."$code  $dsc";
+      $btfy[] = str_pad("  $bline$cozeige $arg ",30)."$code  $dsc";
       $lastline = $line;
     }
 

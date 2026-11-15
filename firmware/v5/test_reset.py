@@ -73,7 +73,7 @@ for a in range(0x48, 0x80): m.ram[a] = 0x5A
 m.ram[0x47] = 0x5A                                 # OVF-Schalter verstellt
 m.ram[0x38] = 77; m.ram[0x37] = 42
 reset(m, pi); m.bis(m.us + 400_000)
-pruef('Version „  5.05 “ nach dem Reset', list(m.anzeige()) == [0, 0, 0xed, 0x3f, 0x6d, 0], str([hex(x) for x in m.anzeige()]))
+pruef('Version „  5.07 “ nach dem Reset', list(m.anzeige()) == [0, 0, 0xed, 0x3f, 0x07, 0], str([hex(x) for x in m.anzeige()]))
 m.bis(m.us + 1_500_000)
 pruef('beide 8155 leer', alles_leer(m), f'{bytes(m.intern.ram[:8]).hex()} {bytes(m.cp3.ram[:8]).hex()}')
 pruef('internes RAM 0x20..0x7F leer bis auf Anzeige/Fernsteuerung', all(m.ram[a] == 0 for a in range(0x48, 0x60)) and m.ram[0x38] == 0 and m.ram[0x37] == 0,
@@ -131,7 +131,7 @@ def akkord(m, halten='clr', dann='stp'):
 m, pi = neu()
 m.intern.ram[10] = 99; m.cp3.ram[10] = 98
 akkord(m); m.bis(m.us + 100_000)
-pruef('Leerlauf: Version „5.05“ erscheint', list(m.anzeige())[2:5] == [0xed, 0x3f, 0x6d], str([hex(x) for x in m.anzeige()]))
+pruef('Leerlauf: Version „5.07“ erscheint', list(m.anzeige())[2:5] == [0xed, 0x3f, 0x07], str([hex(x) for x in m.anzeige()]))
 m.bis(m.us + 1_500_000)
 pruef('… und alles RAM ist weg', alles_leer(m) and text(m.anzeige()) == 'P  000', text(m.anzeige()))
 m, pi = neu()

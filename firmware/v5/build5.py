@@ -35,7 +35,16 @@ src = src[:i0] + "opcode_NEG:     SEL  MB1            ; -> NEG mit Maske (0xD00)
 rep("error_f006:     MOV  R4, #$06\n                JMP  show_error     ; F-006\n",
     "error_f006:     SEL  MB1            ; -> OVF-Schalter (0xD00)\n                JMP  s_f006\n                NOP\n")
 rep("ADD  A, #$e7        ; add (256 - 25) to check for max opcode",
-    "ADD  A, #$d8        ; (256 - 40): INP nimmt Befehle bis 35 an (ODR, OVF, SEG, AS1-3, TST, JSR, RET, PSH, POP)")
+    "ADD  A, #$d0        ; (256 - 48): INP nimmt Befehle bis 47 an (5.06: 40..46 mit festem Wert, 47 SEF)")
+# 5.06: Marken hinter den Zellenprüfungen von ADD/VGL/VGR/VKL für die Befehle mit festem Wert (nur Marken, Bytes gleich)
+rep("                JF1  execute_sub_trampoline ; if F1 is set, it's a SUB\n",
+    "add_imm:        JF1  execute_sub_trampoline ; if F1 is set, it's a SUB\n")
+rep("                MOVX A, @R1         ; Load operand cell content LSB\n                XRL  A, @R0         ; Compare to Accu LSB\n",
+    "vgl_imm:        MOVX A, @R1         ; Load operand cell content LSB\n                XRL  A, @R0         ; Compare to Accu LSB\n")
+rep("                MOVX A, @R1         ; Load operand cell content LSB\n                JZ   vgl_end        ; if zero, no need to compare\n",
+    "vkl_imm:        MOVX A, @R1         ; Load operand cell content LSB\n                JZ   vgl_end        ; if zero, no need to compare\n")
+rep("                MOV  A, @R0         ; Load Accu LSB\n                JZ   vgl_end        ; If zero, it can't be greater than anything\n",
+    "vgr_imm:        MOV  A, @R0         ; Load Accu LSB\n                JZ   vgl_end        ; If zero, it can't be greater than anything\n")
 rep("                MOV  @R0, A         ; store entered number in PC\n                MOV  R6, #$00       ; reset # of entered digits\n                JMP  wait_key\n",
     "                MOV  @R0, A         ; store entered number in PC\n                SEL  MB1            ; -> PC gesetzt: JSR-Stapel leeren (0xF00)\n                JMP  s_pcset\n                NOP\n")
 rep("opcode_inv:     MOV  R4, #$02       ; F-002\n                JMP  show_error\n",
@@ -117,7 +126,8 @@ for packrunde in range(40):
     gefittet, rom, sym = _fit(weit, 0x4000)
     a_ende = max([v for k,v in sym.items() if 0x800<=v<0x1000 and not k.startswith(('za_','zb_'))] + [0])
     b_ende = max([v for k,v in sym.items() if 0x1800<=v<ST+0x2000 and not k.startswith('b_')] + [0])
-    code_a = max([i for i in range(0x800,0x1000) if rom[i]!=0xff]+[0]); code_b = max([i for i in range(0x1800,ST+0x2000) if rom[i]!=0xff]+[0])
+    code_a = max([i for i in range(0x800,0x1800) if rom[i]!=0xff]+[0]); code_b = max([i for i in range(0x1800,ST+0x2000) if rom[i]!=0xff]+[0])
+    # 5.06: code_a sucht bis 0x17FF – Code jenseits 0xFFF fiel vorher still aus dem EEPROM
     zu_viel = [h for h, e, g in (('A', code_a, ST), ('B', code_b, ST+0x1000)) if e >= g]
     if not zu_viel: break
     z = gefittet.split('\n'); pcs = _pcs(gefittet, sym)

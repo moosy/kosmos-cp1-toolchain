@@ -6,7 +6,7 @@ See https://de.wikipedia.org/wiki/Kosmos_CP1 for details.
 A comprehensive collection of documentation can be found at 
 http://www.8bit-homecomputermuseum.at/computer/kosmos_computer_praxis_cp1.html.
 
-Quick reference (German, 3 pages A4, firmware 5.05 with all extensions): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
+Quick reference (German, 3 pages A4, firmware 5.07 with all extensions): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
 
 Firmware internals, the terminal 7/8 protocol (K78P) with NIE and FNI, jobs and flash layout: [INTERNALS.md](INTERNALS.md)
 
@@ -20,12 +20,12 @@ Everything else of the project is here too:
 
 This toolchain consists of the following tools:
 
-Firmware 5.05 in short
+Firmware 5.07 in short
 ----------------------
 
 The CP1 runs an extended firmware (own code in the 8049's upper address range, two halves of
 an AT28C64B switched by P1.4, see "SPI flash" below). At power-on it shows its version
-(`5.05`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
+(`5.07`) for one second. Since 5.00 the original cassette is gone: CAS and CAL operate the SPI
 flash, and the Raspberry Pi talks to the CP1 over port 1 terminals 7 and 8 at any time.
 
 Wiring to the Pi (both lines with the same protection; the Pi only ever pulls low):
@@ -208,7 +208,8 @@ On the CP1 (always 3 digits; CLR clears the input, STP aborts):
 New commands (firmware 4.01), parameters on the JSR/PSH stack:
 - `36 PSK xxx` push the constant xxx
 - `37 FRD xxx` pop count (0 = 256), first cell in the bank, bank; read these cells into memory from xxx
-- `38 FWR xxx` the same in the other direction (bank 0 -> F-003)
+- `38 FWR xxx` the same in the other direction
+- bank 000 (firmware 5.07) = the program's own bank, i.e. the bank it was loaded from (no own bank: F-003)
 - missing stack values -> F-009, no flash -> F-010
 - `39 TSE 000` (firmware 4.02): accumulator = digit pressed since the last TSE, else 255; does not wait.
   VZG now remembers digit keys pressed while it waits, so a game loop with VZG + TSE never misses a key.
@@ -219,6 +220,27 @@ PSK 123    ; first cell in the bank
 PSK 10     ; 10 cells
 FRD 80     ; -> memory 80..89
 ```
+
+```
+PSK 0      ; own bank (5.07)
+PSK leben  ; first variable
+PSK 16     ; 16 cells
+FRD leben  ; -> all start values back, e.g. for a new game (4 cells instead of one AKO/ABS pair each)
+```
+
+Firmware 5.06: commands with a fixed value and pictures from flash
+- `40`–`46`: `ADD #n`, `SUB #n`, `VGL #n`, `VGR #n`, `VKL #n`, `UND #n`, `ODR #n` – like the normal
+  commands, but n is the value itself instead of a cell (no constant cells needed any more).
+- `47 SEF xxx`: show 6 picture bytes from the program's own bank (stored in the flash sector, not in
+  the 256 cells). Pictures are defined on the web page (field "Bilder", e.g. `titel=MInEn`,
+  `lauf=  HALLO CP1  `, `#1,2,3` for raw segment values) and written with "Editor speichern"; in the
+  program you write `SEF titel`, `SEF lauf+3` or `ADD #lauf` – the assembler fills in the numbers.
+  `SEF 254` takes the position from the accumulator (scrolling text in a loop), `SEF 248` shows the
+  bank's own browse display, `SEF 255` clears. About 12 ms per picture.
+- The JSR/PSH stack has 23 levels since 5.06.
+
+Example: `examples/minenflug.koa` – a little game with mines, shots, LED bars on ports 2 and 4 and
+pictures (bank 8 on Michael's CP1). Details of all commands and data formats: [INTERNALS.md](INTERNALS.md).
 
 Demos: `8 RUN` reaction test, `9 RUN` countdown.
 

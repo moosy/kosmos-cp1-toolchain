@@ -1,0 +1,312 @@
+OVF 0
+SEF titel
+TST
+>neu:
+// Startwerte (leben … d5) aus der eigenen Bank neu laden (Firmware 5.07: Bank 0 = eigene Bank)
+PSK 0
+PSK leben
+PSK 16
+FRD leben
+JSR leds
+>loop:
+JSR zeichne
+LDA tempo
+ABS cnt
+>warte:
+TSE
+VGL #4
+SPB links
+VGL #6
+SPB rechts
+VGL #8
+SPB hoch
+VGL #2
+SPB runter
+>wweiter:
+LDA cnt
+SUB #1
+ABS cnt
+VGL #0
+SPB tick
+SPU warte
+>links:
+LDA sx
+VGL #0
+SPB wweiter
+SUB #1
+ABS sx
+SPU bewegt
+>rechts:
+LDA sx
+VGL #5
+SPB wweiter
+ADD #1
+ABS sx
+SPU bewegt
+>hoch:
+AKO 4
+ABS sy
+SPU bewegt
+>runter:
+AKO 0
+ABS sy
+>bewegt:
+JSR pruef
+JSR zeichne
+SPU wweiter
+>tick:
+LDA spos
+VGR #5
+SPB spawn
+ADD sdir
+ABS spos
+SPU minen
+>spawn:
+LDA seed
+VGR #70
+SPB minen
+UND #4
+ABS srow
+AKO 255
+ABS sdir
+AKO 5
+ABS spos
+LDA sx
+VKL #3
+SPB minen
+AKO 1
+ABS sdir
+AKO 0
+ABS spos
+>minen:
+LDA nmin
+VGL #3
+SPB fertig
+JSR zufall
+UND #15
+VGR #5
+SPB fertig
+VGL sx
+SPB fertig
+ADD #d0
+ABS zp
+LIA zp
+VGR #0
+SPB fertig
+AKO 128
+AIS zp
+LDA nmin
+ADD #1
+ABS nmin
+>fertig:
+JSR pruef
+SPU loop
+>pruef:
+JSR zufall
+LDA spos
+VGL sx
+SPB pr2
+>sammeln:
+LDA sy
+VGR #0
+SPB nix
+AKO d0
+ADD sx
+ABS zp
+LIA zp
+VGL #0
+SPB nix
+AKO 0
+AIS zp
+LDA nmin
+SUB #1
+ABS nmin
+LDA total
+ADD #1
+ABS total
+LDA pkt
+ADD #1
+ABS pkt
+VGL #8
+SPB extra
+SPU leds
+>pr2:
+LDA srow
+VGL sy
+SPB crash
+SPU sammeln
+>extra:
+AKO 0
+ABS pkt
+LDA leben
+VGL #8
+SPB schneller
+ADD #1
+ABS leben
+>schneller:
+LDA tempo
+VKL #12
+SPB leds
+SUB #3
+ABS tempo
+>leds:
+AKO bar
+ADD pkt
+ABS zq
+LIA zq
+P2A 0
+AKO bar
+ADD leben
+ABS zq
+LIA zq
+P4A 0
+>nix:
+RET
+>crash:
+SEF explo
+AKO 3
+ABS tmp
+>blink:
+// Boom: Punkte-LEDs (Port 2, LOW-aktiv) blinken dreimal, danach sind die Punkte weg
+AKO 0
+P2A 0
+VZG 120
+AKO 255
+P2A 0
+VZG 120
+LDA tmp
+SUB #1
+ABS tmp
+VGR #0
+SPB blink
+AKO 0
+ABS pkt
+AKO 6
+ABS spos
+LDA leben
+SUB #1
+ABS leben
+JSR leds
+LDA leben
+VGL #0
+SPB ende
+RET
+>ende:
+POP
+SEF ende
+TST
+LDA total
+ANZ
+TST
+SPU neu
+>zeichne:
+AKO tab
+ADD sy
+ABS zq
+LIA zq
+ABS tmp
+AKO d0
+ADD sx
+ABS zp
+LIA zp
+ODR tmp
+AIS zp
+LDA spos
+VGR #5
+SPB zseg
+AKO gtab
+ADD srow
+ABS zq
+LIA zq
+ABS tmp
+AKO d0
+ADD spos
+ABS zq
+LIA zq
+ODR tmp
+AIS zq
+>zseg:
+SEG d0
+LIA zp
+UND #128
+AIS zp
+LDA spos
+VGR #5
+SPB nix
+LIA zq
+UND #128
+AIS zq
+RET
+>zufall:
+LDA seed
+ADD seed
+ADD seed
+ADD seed
+ADD seed
+ADD #3
+ABS seed
+RET
+
+>leben:
+# 3
+>pkt:
+# 0
+>total:
+# 0
+>nmin:
+# 0
+>sx:
+# 0
+>sy:
+# 0
+>spos:
+# 6
+>sdir:
+# 0
+>srow:
+# 0
+>tempo:
+# 34
+>d0:
+# 0
+>d1:
+# 0
+>d2:
+# 0
+>d3:
+# 0
+>d4:
+# 0
+>d5:
+# 0
+>cnt:
+# 0
+>seed:
+# 0
+>tmp:
+# 0
+>tab:
+# 92
+>gtab:
+# 8
+>zp:
+# 0
+>zq:
+# 0
+# 99
+# 1
+>bar:
+# 255
+# 254
+# 252
+# 248
+# 240
+# 224
+# 192
+# 128
+# 0
+
+// Bilder
+// @titel=MInEn.
+// @explo=8.8.8.8.8.8.
+// @ende=EndE

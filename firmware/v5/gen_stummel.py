@@ -1,5 +1,5 @@
 # Umschalt-Stummel für beide EEPROM-Hälften erzeugen (gleiche Bytes an gleicher Stelle, Ende 0xFFF)
-NACH_B = ['k_cal_vor', 'sf_ok', 'f_boot', 'j_speichern', 'j_laden', 'j_autoboot', 'k_teil', 'bl_suche']
+NACH_B = ['k_cal_vor', 'sf_ok', 'f_boot', 'j_speichern', 'j_laden', 'j_autoboot', 'k_teil', 'bl_suche', 's_sef']
 NACH_A = ['s_ende', 's_cal_ui', 'boot_warte', 'job_kopf', 'bl_zeige']
 NACH_UNTEN = ['inc_pc', 'show_error', 'wait_key', 'run_weiter']        # über A, dann SEL MB0
 groesse = 5 * (len(NACH_B) + len(NACH_A)) + 6 * len(NACH_UNTEN)

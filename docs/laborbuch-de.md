@@ -88,12 +88,35 @@ den Charakter des Geräts zu verlieren.
 - Frei danach: Hälfte A 144, B 52 Byte. Reserve: 2× AT28C256 (A13 an P1.5 würde Klemme 6 kosten).
 - Toolchain nach GitHub gepusht (Michaels OK), dazu `INTERNALS.md` (K78P) und Schnellübersicht 5.05.
 
+## 2026-11-15 nachmittags – Minenflug, 5.06/5.07
+
+- Michaels Spielidee mit den Dezimalpunkten. Erst Plan, dann „go“.
+- Erster Entwurf: 342 Zellen. Gepackt (Minerale im Anzeigepuffer, Geschoss „aus“ = Position außerhalb,
+  verschränkte Tabellen) auf 268 – immer noch 12 zu viel, genau die Konstanten-Zellen. Michael: Befehle
+  mit festem Wert → 5.06 mit `ADD #1` usw. Danach SEF (Bilder aus dem Flash), auf seinen Einwand mit
+  Bank 255 als gemeinsamer Ablage in die eigene Bank verlegt; SEF 254 nachgeschoben, weil mein
+  „Lauftexte geschenkt“ ohne Akku-Position nicht stimmte.
+- Platzkampf in Hälfte A: Der Lückenfüller fand trotz genug freier Bytes keine Lösung. **Gefährlichster
+  Fund:** Ein Build sah fertig aus, aber Hälfte A war über 0xFFF hinausgelaufen – AS/JSR/PSH/VZG lagen
+  außerhalb des EEPROMs, das Bauskript prüfte nur bis 0xFFF. Gemerkt nur, weil „frei 579 Byte“ nicht
+  stimmen konnte. Jetzt prüft build5.py bis 0x17FF.
+- Fehler von mir: pkill mit einem Muster, das auch meine eigene Shell traf (zweimal Exit 144). Lehre:
+  Prozesse per PID beenden, nicht per Muster, das im eigenen Befehl vorkommt.
+- Michael wollte Minenflug in Bank 4 – dort liegt der Asteroiden-Rekord (FRD/FWR); hätte beide
+  zerschossen. Jetzt Bank 8, Bank 4 heißt „Asteroiden Daten“.
+- 5.07 (Bank 0 = eigene Bank bei FRD/FWR) auf Michaels Beobachtung, dass das Initialisieren so viele
+  Zellen frisst. Seine Idee für die gesparten Zellen: beim Boom blinken die Punkte-LEDs (mit Relais).
+- Michael nach dem Spielen: „das macht so viel Spaß, Schwierigkeitsgrad genau richtig“.
+- Später vielleicht: Overlays (Spielteile per FRD nachladen), „eigene Bank + n“.
+
 ## Chips und Stände
 
 | Firmware | SHA-256 (Anfang) | Wo |
 |---|---|---|
-| 5.05 | 3e404bb0 | im CP1 (seit 2026-11-15) |
-| 5.04 | fd58cbc6 | Rückfall |
+| 5.07 | bd35a143 | im CP1 (seit 2026-11-15) |
+| 5.06 | 7bc4d312 | Rückfall |
+| 5.05 | 3e404bb0 | – |
+| 5.04 | fd58cbc6 | – |
 | 5.02 | fc9a6fa8 | – |
 | 5.01 | 8dc4cd1b | – |
 

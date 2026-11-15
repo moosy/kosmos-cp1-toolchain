@@ -61,7 +61,10 @@
   .miniAnz svg { display: block; width: 110px; height: auto; }
   .editor { display: grid; grid-template-columns: 1fr 220px; gap: 12px; margin-top: 10px; }
   .editor textarea { min-height: 420px; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 4; }
-  @media (max-width: 720px) { .editor { grid-template-columns: 1fr; } .editor textarea { min-height: 260px; } }
+  .editor .rechts { display: flex; flex-direction: column; gap: 6px; }
+  .editor .rechts textarea { min-height: 0; flex: 1; }
+  .editor .rechts #namen { flex: 3; }  .editor .rechts #bilder { flex: 2; }
+  @media (max-width: 720px) { .editor { grid-template-columns: 1fr; } .editor textarea, .editor .rechts textarea { min-height: 200px; } }
   table.verz { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; font-size: 14px; }
   table.verz th { text-align: left; color: var(--grau); font-weight: 500; font-size: 12.5px; padding: 4px 6px; border-bottom: 1px solid #3d4642; }
   table.verz td { padding: 5px 6px; border-bottom: 1px solid #333b38; }
@@ -130,9 +133,11 @@
           <label for="quelle">Quelltext (Marken mit Zeilennummer; die Nummern setzt „Assemblieren“ neu)</label>
           <textarea id="quelle" spellcheck="false" placeholder=">start:&#10;  AKO 123&#10;  ANZ&#10;  HLT"></textarea>
         </div>
-        <div>
+        <div class="rechts">
           <label for="namen">Namen (Adresse=Name)</label>
           <textarea id="namen" spellcheck="false" placeholder="035=display_loop&#10;134=punkte"></textarea>
+          <label for="bilder" title="Bilder für SEF (ab Firmware 5.06): liegen im Flash der Bank, nicht im RAM. Im Programm: SEF titel, SEF lauf+3. „.“ = Punkt, #1,2,3 = Segmentwerte. Gelten, nachdem das Programm mit „Editor speichern“ in der Bank liegt.">Bilder für SEF (Name=Text)</label>
+          <textarea id="bilder" spellcheck="false" placeholder="titel=MInEn&#10;explo=8.8.8.8.8.8.&#10;lauf=  HALLO CP1  "></textarea>
         </div>
       </div>
       <div class="knoepfe">
@@ -319,16 +324,18 @@ async function lange(knopf, meldung, f) {
   finally { knopf.disabled = false; beschaeftigt--; abfragen(); }
 }
 // ---- Editor: ein Quelltext-Fenster + Namen (Adresse=Name); Entwurf bleibt im Browser
-const ed = $('#quelle'), nm = $('#namen');
+const ed = $('#quelle'), nm = $('#namen'), bl = $('#bilder');
 let progName = 'cp1', assembliert = null;
-try { ed.value = localStorage.getItem('cp1-quelle') || ''; nm.value = localStorage.getItem('cp1-namen') || ''; } catch (e) {}
-function merken() { try { localStorage.setItem('cp1-quelle', ed.value); localStorage.setItem('cp1-namen', nm.value); } catch (e) {} }
-ed.oninput = nm.oninput = () => { assembliert = null; merken(); };
+try { ed.value = localStorage.getItem('cp1-quelle') || ''; nm.value = localStorage.getItem('cp1-namen') || '';
+      bl.value = localStorage.getItem('cp1-bilder') || ''; } catch (e) {}
+function merken() { try { localStorage.setItem('cp1-quelle', ed.value); localStorage.setItem('cp1-namen', nm.value);
+                          localStorage.setItem('cp1-bilder', bl.value); } catch (e) {} }
+ed.oninput = nm.oninput = bl.oninput = () => { assembliert = null; merken(); };
 function insEditor(listing, name) {
   ed.value = listing.replace(/^\n+/, ''); progName = name; assembliert = null; merken();
 }
 async function assemble() {
-  const r = await api('/api/assemblieren', { quelltext: ed.value, namen: nm.value });
+  const r = await api('/api/assemblieren', { quelltext: ed.value, namen: nm.value, bilder: bl.value });
   const pos = ed.selectionStart;
   ed.value = r.quelltext; nm.value = r.namen; ed.selectionStart = ed.selectionEnd = pos; merken();
   assembliert = r;
@@ -340,8 +347,10 @@ $('#assemblieren').onclick = () => lange($('#assemblieren'), $('#ladenM'), async
 $('#ladenQ').onclick = () => lange($('#ladenQ'), $('#ladenM'), async () => {
   const a = await assemble();
   const zellen = Object.fromEntries(Object.entries(a.zellen).filter(([k]) => +k <= a.bis));
-  const r = await api('/api/laden', { zellen });
-  return `in den CP1 geladen: Zellen ${drei(r.von)}–${drei(r.bis)}`;
+  const sef = /^\s*(\d{1,3}:?\s+)?SEF\s+(?!255\b)/im.test(ed.value);
+  const pbank = sef ? +$('#fBank').value : 0;                     // SEF: Bilder aus der Bank im Feld „In Bank“
+  const r = await api('/api/laden', { zellen, pbank });
+  return `in den CP1 geladen: Zellen ${drei(r.von)}–${drei(r.bis)}` + (sef ? ` · SEF zeigt die Bilder aus Bank ${drei(pbank)}` : '');
 });
 function herunterladen(text, endung, typ) {
   const a = document.createElement('a');
@@ -349,7 +358,9 @@ function herunterladen(text, endung, typ) {
   a.download = progName + endung; a.click();
 }
 $('#alsKoa').onclick = () => herunterladen(ed.value.replace(/\s*$/, '\n') +
-  (nm.value.trim() ? '\n// Namen\n' + nm.value.trim().split('\n').map(z => '// ' + z).join('\n') + '\n' : ''), '.koa', 'text/plain');
+  (nm.value.trim() ? '\n// Namen\n' + nm.value.trim().split('\n').map(z => '// ' + z).join('\n') + '\n' : '') +
+  (bl.value.trim() ? '\n// Bilder\n' + bl.value.replace(/\s+$/, '').split('\n').filter(z => z.trim()).map(z => '// @' + z.trim().replace(/^@/, '') ).join('\n') + '\n' : ''),
+  '.koa', 'text/plain');
 $('#alsJson').onclick = () => lange($('#alsJson'), $('#ladenM'), async () => {
   const a = await assemble();
   herunterladen(JSON.stringify(a.zellen), '.json', 'application/json');
@@ -361,19 +372,21 @@ $('#datei').onchange = e => {
   lange($('#holenAlles'), $('#ladenM'), async () => {
     const text = await f.text(), name = f.name.replace(/\.[^.]*$/, '');
     if (/\.json$/i.test(f.name)) {
-      const r = await api('/api/disasm', { zellen: JSON.parse(text), namen: nm.value });
+      const r = await api('/api/disasm', { zellen: JSON.parse(text), namen: nm.value, bilder: bl.value });
       insEditor(r.listing, name);
     } else {
       const namen = [...text.matchAll(/^\/\/ (\d{1,3}=\w+)\s*$/gm)].map(m => m[1]);   // von „Als .koa sichern“
       if (namen.length) nm.value = namen.join('\n') + '\n';
-      insEditor(text.replace(/\n*\/\/ Namen\n(\/\/ \d{1,3}=\w+\s*\n?)*\s*$/, '\n'), name);
+      const bilder = [...text.matchAll(/^\/\/ @(\w+=.*)$/gm)].map(m => m[1]);
+      if (bilder.length) bl.value = bilder.join('\n') + '\n';
+      insEditor(text.replace(/\n*\/\/ Bilder\n(\/\/ @.*\n?)*\s*$/, '\n').replace(/\n*\/\/ Namen\n(\/\/ \d{1,3}=\w+\s*\n?)*\s*$/, '\n'), name);
     }
     return `${f.name} geöffnet`;
   });
 };
 function holen(knopf, obj) {
   lange(knopf, $('#ladenM'), async () => {
-    const r = await api('/api/speichern', { ...obj, namen: nm.value });
+    const r = await api('/api/speichern', { ...obj, namen: nm.value, bilder: bl.value });
     const k = Object.keys(r.zellen).sort((a, b) => a - b);
     insEditor(r.listing, 'cp1-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-'));
     return `aus dem CP1 geholt: Zellen ${k[0]}–${k[k.length - 1]}`;
@@ -400,6 +413,7 @@ function zeigeVerz(v) {
     tr.querySelector('[data-a=sichern]').onclick = ev => lange(ev.target, $('#flashM'), async () => {
       const r = await api('/api/bank/sichern', { bank: e.bank, namen: '' });   // nur die Namen dieser Bank
       nm.value = r.namen_aus_bank ? r.namen : '';
+      bl.value = r.bilder || '';
       insEditor(r.listing, `bank${drei(e.bank)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
       $('#fBank').value = e.bank; $('#fBank').dataset.angefasst = 1; $('#fName').value = (r.name || '').trim();
       $('#fAnz').value = r.anzeige || ''; anzVorschau();
@@ -445,10 +459,11 @@ $('#fEditor').onclick = () => {
   lange($('#fEditor'), $('#flashM'), async () => {
     const a = await assemble();
     const st = start !== '' ? +start : (da ? null : 0);            // leer: bestehender Start bleibt, neue Bank 0
-    await api('/api/bank/einspielen', { bank, zellen: a.zellen, name: name || null, start: st, namen: a.namen, anzeige: $('#fAnz').value });
+    await api('/api/bank/einspielen', { bank, zellen: a.zellen, name: name || null, start: st, namen: a.namen, anzeige: $('#fAnz').value, bilder: bl.value });
     zeigeVerz(await api('/api/flash'));
     const n = a.namen.trim() ? a.namen.trim().split('\n').length : 0;
-    return `Editor -> Bank ${drei(bank)} (alle 256 Zellen${n ? ', ' + n + ' Namen' : ''}, RAM unberührt)`;
+    const nb = a.bilder.trim() ? a.bilder.trim().split('\n').length : 0;
+    return `Editor -> Bank ${drei(bank)} (alle 256 Zellen${n ? ', ' + n + ' Namen' : ''}${nb ? ', ' + nb + ' Bilder' : ''}, RAM unberührt)`;
   });
 };
 

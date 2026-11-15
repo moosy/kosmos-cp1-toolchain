@@ -12,7 +12,7 @@ Bastelprojekt (seit 2026-11-02): die Firmware des 8049 im CP1 verstehen und eine
 | Programmer | XGecu T48 mit Adaptern und SOIC-8-Klemme (DollaTek, Amazon), Software Xgpro unter Windows |
 | EEPROM-Abbild Bank 0 | fertig auf Michaels Werkbank-Rechner, Sicherung auf Michaels Rechnern (seit 2026-11-04, im Backup; nicht im Repo, Copyright) |
 | Schnelle Kassettenroutine | Firmware + Pi-Werkzeug geschrieben, im eigenen Simulator getestet (2026-11-12); Test am Gerät offen |
-| Firmware im Gerät | **5.05** seit 2026-11-15 (Flash-Tasten, NIE/FNI, Trennpunkt, Reset CLR+STP, Namen in Bänken, Blättern mit CAL), siehe unten; 5.04 Rückfall |
+| Firmware im Gerät | **5.07** seit 2026-11-15 (Flash-Tasten, NIE/FNI, Reset, Namen, Blättern, Befehle mit festem Wert, SEF-Bilder, eigene Bank), siehe unten; 5.06 Rückfall |
 
 ## Hardware im CP1 (Foto Michael, 2026-11-03)
 
@@ -230,7 +230,7 @@ Idee Michael: Der bastelpi drückt Tasten und liest die Anzeige, egal was der CP
 
 **Getestet am Gerät (3.05):** 60/60 Statusabfragen bei 5/s während laufendem Programm, Tastenfolgen korrekt; Michael: „Abfragen ist unsichtbar, das kurze Dunkelschalten beim Tastendruck wirkt wie eine Bestätigung“. Noch nicht am Gerät: Laden/Speichern über die Webseite, CAS halten aus der Ferne (im Simulator ok).
 
-**Dateien:** Quellen in `firmware/history/schnell/` (`rc_unten.asm`, `rc_seite1.asm`, `rc_seite3.asm`, `build.py`, `test_rc.py` u. a.) und `Repo-Wurzel` (`kosmos_remote.py`, `kosmos_remote.html`, `kosmos_rc.c`, `kosmos-remote.service`); Toolchain-Commit f792fbe (GitHub). Abbilder nur auf Michaels Rechnern (`cp1-eeprom-v3.05.bin` a05df70f…, Bank 1 `cp1schnell-3.05.bin` d1a7967a…) und bastelpi `~/cp1-firmware/schnell/`, gebrannt mit dem T48. Michael hatte zwei EEPROMs: v3.05 im CP1, v3.04 als Rückfallebene (seit 4.0 beide mit 4.x, siehe unten).
+**Dateien:** Quellen in `firmware/history/schnell/` (`rc_unten.asm`, `rc_seite1.asm`, `rc_seite3.asm`, `build.py`, `test_rc.py` u. a.) und `Repo-Wurzel` (`kosmos_remote.py`, `kosmos_remote.html`, `kosmos_rc.c`, `kosmos-remote.service`); Toolchain-Commit f792fbe (GitHub). Abbilder nur auf Michaels Rechnern (`cp1-eeprom-v3.05.bin` a05df70f…, Bank 1 `cp1schnell-3.05.bin` d1a7967a…) und bastelpi `~/cp1-firmware/schnell/`, gebrannt mit dem T48 . Michael hatte zwei EEPROMs: v3.05 im CP1, v3.04 als Rückfallebene (seit 4.0 beide mit 4.x, siehe unten).
 
 ## SPI-Flash als „Festplatte“ (Firmware 4.0x, 2026-11-13)
 
@@ -407,3 +407,19 @@ Michaels Idee beim Spielen: zu jeder Bank eine 6-stellige CP1-Anzeige speichern,
 - Tests: `test_blaettern.py` neu, `test_ui5` angepasst; alle grün. Am Gerät: 5.05 (3e404bb0…) auf das frühere 5.03-Exemplar, 5.04 Rückfall; Blättern klappt (Michael).
 - 2026-11-15: Toolchain bis 30d16c3 nach GitHub gepusht (Michaels OK), dazu `INTERNALS.md` (englisch, hier als `kosmos-cp1/INTERNALS.md`): K78P = Klemme-7-und-8-Protokoll (Michaels Name), NIE/FNI, Aufträge, Flash-Aufbau. Schnellübersicht `cheatsheet/` auf 5.05 (Seite 2 jetzt Flash über die Tasten, Seite 3 Flash im Programm + Pi + K78P). Laborbuch auf moosy.net (Rubrik Laborbücher, Buch „Kosmos CP1“).
 - Michael hat 2× AT28C256 (32 KB) da. Einbau erst, wenn Platz gebraucht wird: A13 an P1.5 (Klemme 6, die letzte freie Klemme für Programme), A14 auf GND → 4 Hälften à 4 KB.
+
+## Befehle mit festem Wert, Bilder, eigene Bank – Firmware 5.06/5.07 (2026-11-15)
+
+Anlass: Michaels Spielidee „Minenflug“ (Schiff `°`/`o` mit 2/4/6/8, Minerale = Dezimalpunkte, Geschosse von der fernen Seite, LED-Balken Punkte an Port 2, Leben an Port 4, LOW-aktiv) passte mit 342 Zellen nicht in 256. Daraus wurden drei Firmware-Erweiterungen, alle auf Michaels Vorschlag oder mit seinem „go“.
+
+**5.06 – Befehle 40–46 mit festem Wert** (Michaels Idee: „Varianten mit festem Wert, damit wir nicht so viele Zellen für Konstanten verbrutzeln“): `ADD # SUB # VGL # VGR # VKL # UND # ODR #` = Befehle 40–46, Assembler-Schreibweise `ADD #1`. Sie springen in die Original-Routinen hinter deren Zellenprüfung (`add_imm`, `vgl_imm`, `vgr_imm`, `vkl_imm` – nur Marken in cp1.asm, keine Bytes geändert); dort liest `MOVX A,@R1` dann das Argument des Befehls selbst. OVF, Vergleichsergebnis und F 005 wie bei den Zellen-Varianten. `test_imm.py`: 105 Vergleichsfälle, 40 Zufallsfälle gegen die Zellen-Variante.
+
+**5.06 – SEF xxx (47), Bilder aus dem Flash** (Michaels Idee, erst mit fester Bilderbank 255; auf seine Frage „wenn mehrere Programme Bank 255 nutzen, kommen sie sich in die Quere“ dann so): Bilder liegen im Sektor der **eigenen** Bank (0x500–0x5F7, von oben, die Namen wachsen von unten dagegen), nicht in den 256 Zellen. Die Firmware merkt sich beim Laden einer Bank deren Nummer in S_PBANK = 0x5F (dafür hat der JSR/PSH-Stapel 23 statt 24 Ebenen). SEF xxx liest 6 Byte ab 0x500 + xxx, ~12 ms. `SEF 254` = Position aus dem Akku (Lauftext-Schleife – ohne das wäre mein Versprechen „Lauftexte geschenkt“ falsch gewesen, das Argument ist fest), `SEF 248` = eigene Blätter-Anzeige, `SEF 255` löscht, ohne eigene Bank dunkel. Webseite: Feld „Bilder“ (`titel=MInEn`, `#1,2,3`), Assembler löst `SEF titel`, `SEF lauf+3`, `ADD #lauf` auf, Bilder stehen als `@name`-Einträge in der Namensliste und kommen mit „In Editor“ zurück.
+
+**5.07 – FRD/FWR mit Bank 000 = eigene Bank** (Michaels Beobachtung: „sehr viele Zellen, um Speicherstellen zu initialisieren – kann man die nicht aus der Bank neu laden?“): `PSK 0 / PSK erste / PSK n / FRD erste` lädt alle Startwerte zurück (Minenflug: 4 statt 18 Zellen). FWR in die eigene Bank kopiert den ganzen Sektor (mit Namen und Bildern, im Simulator einige Sekunden) – für Rekorde am Spielende. Ohne eigene Bank F 003 (FRD auf Bank 0 las vorher das Verzeichnis).
+
+**Platz:** Hälfte A lief mehrfach über, obwohl rechnerisch genug frei war – der Lückenfüller verschiebt nur Absätze, deren bedingte Sprünge in ihnen bleiben, und die Seite ab 0xF00 (MOVP-Tabelle der AS-Befehle) ließ davor 70 Byte ungenutzt. Abhilfen: `s_imm` in kleine Absätze geteilt, POP mit eigenem Sprung (verschiebbar), ASCII-Tabelle der Blätter-Anzeige erst ab „,“ (spart 14 Byte; `( ) " ' $` bleiben dunkel), Bank-0-Prüfung von SEF nach Hälfte A. **Fehler im Bauskript gefunden:** lief Hälfte A über 0xFFF hinaus, landete der Rest still außerhalb des EEPROMs (Prüfung sah nur bis 0xFFF) – ein Build wäre beinahe „fertig“ gewesen, ohne AS/JSR/PSH/VZG. `build5.py` prüft jetzt bis 0x17FF; 5.05 war nicht betroffen (nachgeprüft). Frei danach: A 39, B 16 Byte.
+
+**Minenflug** (Bank 8, `examples/minenflug.koa` im Toolchain-Repo): 254 Zellen, Bilder `titel`/`explo`/`ende`, Start/Neustart per `PSK 0 … FRD`, beim Crash blinken die Punkte-LEDs dreimal (Michael: „da sind auch Relais dran, das klickt so schön“) und die Punkte bis zum Extraleben sind weg. Tempo ¼ s pro Stelle, schneller je Extraleben bis Untergrenze. Im Simulator mit einem Bot gespielt (Ausweichen, Sammeln, LEDs, Neustart, Stapel sauber). Michael: „das macht so viel Spaß, Schwierigkeitsgrad genau richtig“. Bank 4 heißt jetzt „Asteroiden Daten“ (Rekord von Asteroiden; Minenflug sollte erst dorthin – hätte den Rekord zerschossen).
+
+**Am Gerät:** 5.06 (7bc4d312…) auf das frühere 5.04-Exemplar, 5.07 (bd35a143…) auf das frühere 5.05-Exemplar; 5.07 im CP1, 5.06 Rückfall. Alle 13 Testreihen grün (neu: test_imm, test_sef, test_bilder). Michaels nächste Idee (später): Overlays – nur die aktuelle Schleife im RAM, Spielteile per FRD nachladen; dafür wäre „eigene Bank + n“ praktisch.

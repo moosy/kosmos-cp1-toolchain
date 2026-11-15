@@ -47,7 +47,8 @@
                 .equ S_ASZ,     $77     ; AS: Ziffer
                 .equ S_RSP,     $45     ; JSR/RET: Stapelzeiger 0..24 (init löscht 0x20..0x47)
                 .equ S_RSTAPEL, $48     ; JSR/RET: Rücksprungadressen 0x48..0x5F
-                .equ RTIEFE,    24
+                .equ RTIEFE,    23      ; 5.06: 23 Ebenen, 0x5F = S_PBANK (Bank des Programms für SEF)
+                .equ S_PBANK,   $5f
                 .equ S_OVFAUS,  $47     ; 1 = Überlauf aus (OVF 000); init löscht 0x20..0x47
 
                 ; ohne Interrupt: Sendeschleife 5 µs je Schritt, Messschleife 15 µs je Schritt
@@ -510,14 +511,14 @@ sn_ok:          INC  R0
 
 s_und:          CALL b_operand          ; A = Zelle xxx, R0 -> Akku LSB, F1 = Fehler
                 JF1  b_fehler
-                ANL  A, @R0
+su_imm:         ANL  A, @R0
                 MOV  @R0, A
                 SEL  MB0
                 JMP  inc_pc
 
 s_oder:         CALL b_operand
                 JF1  b_fehler
-                ORL  A, @R0
+so_imm:         ORL  A, @R0
                 MOV  @R0, A
                 SEL  MB0
                 JMP  inc_pc
@@ -886,20 +887,18 @@ bz_f003:        JMP  s_f003
 ; Allgemein nutzbar (Bank-Namen beim Blättern, später vielleicht ein Befehl).
 ; ---------------------------------------------------------------------
                 .seite
-asc_seg:        ADD  A, #$e0            ; i = Zeichen - 0x20
+asc_seg:        JB7  asg_leer            ; ab 0x80 dunkel
+                JB6  asg_buchst          ; 0x40..0x7F: Kleinbuchstaben wie große
+asg_tab:         ADD  A, #$d4            ; i = Zeichen - 0x2C (5.06: Tabelle erst ab „,“, davor dunkel)
                 JNC  asg_leer
-                JB7  asg_leer            ; ab 0xA0
-                JB6  asg_klein           ; 0x60..0x9F
-asg_tab:         ADD  A, #<asg_tabelle
+                ADD  A, #<asg_tabelle
                 MOVP A, @A
                 RET
-asg_klein:       ADD  A, #$e0            ; a..z -> A..Z
-                JB6  asg_leer            ; 0x80..0x9F
+asg_buchst:      ANL  A, #$df            ; 0x60..0x7F -> 0x40..0x5F
                 JMP  asg_tab
 asg_leer:        CLR  A
                 RET
-asg_tabelle:     .db $00, $00, $22, $00, $6d, $00, $00, $20    ;  (Leer) ! " # $ % & '
-                .db $39, $0f, $00, $00, $80, $40, $80, $52    ; ( ) * + , - . /
+asg_tabelle:     .db $80, $40, $80, $52                        ; , - . /
                 .db $3f, $06, $5b, $4f, $66, $6d, $7d, $07    ; 0..7
                 .db $7f, $6f, $00, $00, $00, $48, $00, $53    ; 8 9 : ; < = > ?
                 .db $00, $77, $7c, $39, $5e, $79, $71, $3d    ; @ A b C d E F G
@@ -1000,7 +999,7 @@ sb_r:           MOV  @R0, #$00          ; 0x20..0x47; LEER/AUFTRAG (0x16/0x17) u
                 INC  R0
                 MOV  @R0, #$3f          ; 0
                 INC  R0
-                MOV  @R0, #$6d          ; 5   (Version 5.05)
+                MOV  @R0, #$07          ; 7   (Version 5.07)
                 MOV  R0, #S_ZAEHL       ; 4 x 250 ms (delay_millis braucht R2 und R3)
                 MOV  @R0, #4
 sb_w:           MOV  R3, #250
@@ -1165,7 +1164,7 @@ ps_f005:        SEL  MB0
 ; 35 POP: oberster Wert in den Akku
 s_pop:          MOV  R0, #S_RSP
                 MOV  A, @R0
-                JZ   rt_f009            ; Stapel leer
+                JZ   po_f009            ; Stapel leer
                 DEC  A
                 MOV  @R0, A
                 ADD  A, #S_RSTAPEL
@@ -1177,6 +1176,7 @@ s_pop:          MOV  R0, #S_RSP
                 MOV  @R0, A
                 SEL  MB0
                 JMP  inc_pc
+po_f009:        JMP  rt_f009            ; 5.06: eigener Sprung, damit der Lückenfüller POP verschieben darf
 
 ; OUT P1A: P1.0-P1.4 (Flash, A12), P1.6 (FNI-Takt) und P1.7 (Fernsteuerung) bleiben 1; frei nur Klemme 6
 ; Einsprung aus write_to_p1 (SEL MB1 / JMP s_p1aus statt OUTL P1, A / JMP inc_pc)
@@ -1323,7 +1323,10 @@ sf_gem:         MOVX A, @R1
                 ADD  A, #S_RSTAPEL
                 MOV  R1, A
                 MOV  A, @R1
-                MOV  R0, #F_BANK
+                JNZ  sf_bank            ; 5.07: Bank 0 = eigene Bank (aus der das Programm geladen wurde)
+                MOV  R0, #S_PBANK
+                MOV  A, @R0
+sf_bank:        MOV  R0, #F_BANK
                 MOV  @R0, A
                 INC  R1
                 MOV  A, @R1
@@ -1348,13 +1351,11 @@ sf_gem:         MOVX A, @R1
                 CPL  A
                 ADD  A, R4
                 JC   sf_f003
-                MOV  A, R5
-                JZ   sf_ok_a
                 MOV  R0, #F_BANK
                 MOV  A, @R0
-                JZ   sf_f003            ; Bank 0 nur über die Tasten
-sf_ok_a:        JMP  zb_sf_ok           ; Flash-Arbeit in Hälfte B
-sf_f002:        JMP  b_f002
+                JZ   sf_f003            ; keine eigene Bank (5.07; Verzeichnis nur über die Tasten)
+                JMP  zb_sf_ok           ; Flash-Arbeit in Hälfte B
+sf_f002:        JMP  s_imm              ; 5.06: Befehl 40..46 mit festem Wert, sonst F-002 (A = Befehl - 39)
 sf_f009:        JMP  rt_f009
 sf_f003:        MOV  R0, #F_JOB
                 MOV  @R0, #$00
@@ -1388,4 +1389,92 @@ ts_akku:        MOV  R0, #ACCU
                 INC  R0
                 MOV  @R0, A
                 SEL  MB0
+                JMP  inc_pc
+
+; 5.06 s_imm: Befehle 40..46 = ADD/SUB/VGL/VGR/VKL/UND/ODR mit festem Wert (Argument statt Zelle).
+; Aus s_fbef: A = Befehl - 39 (>= 1), R1 -> Argument. Akku muss ein Datum sein (sonst F-005).
+; Springt in die Original-Routinen hinter deren Zellenprüfung: dort liest MOVX A,@R1 den Wert,
+; und R1 zeigt hier eben auf das Argument im Befehl. R0 -> Akku LSB.
+s_imm:          ADD  A, #$f8            ; Befehl - 47: C = 1 bei 47 und mehr
+                JC   im_f002
+                ADD  A, #$07            ; Befehl - 40 = 0..6
+                MOV  R5, A
+                MOV  R0, #ACCU
+                MOV  A, @R0
+                JNZ  im_f005
+                INC  R0                 ; R0 -> Akku LSB
+                CLR  F1                 ; F1 = SUB wie im Original
+                JMP  im_d2
+im_f002:        JMP  s_sefa             ; 47 SEF, sonst F-002 (A = Befehl - 47)
+im_f005:        JMP  b_f005
+
+; 5.06 (kleine Absätze, damit der Lückenfüller sie verteilen kann)
+im_d2:          MOV  A, R5
+                JZ   im_add             ; 40 ADD
+                DEC  A
+                JZ   im_sub             ; 41 SUB
+                JMP  im_d3
+im_sub:         CPL  F1
+im_add:         SEL  MB0
+                JMP  add_imm
+
+im_d3:          ADD  A, #$fc            ; A = R5 - 5, C = 1 bei 45/46
+                JNC  im_v0              ; 42..44
+                JZ   im_und             ; 45 UND
+                MOVX A, @R1             ; 46 ODR: fester Wert
+                JMP  so_imm
+im_und:         MOVX A, @R1
+                JMP  su_imm
+im_v0:          JMP  im_vgl
+
+; 5.06 Vergleiche mit festem Wert (R5 = 2 VGL, 3 VGR, 4 VKL)
+im_vgl:         SEL  MB0
+                CALL clear_comparison_result    ; benutzt R0, A
+                MOV  R0, #ACCU_LSB
+                MOV  A, R5
+                XRL  A, #$02
+                JZ   im_gl
+                SEL  MB1
+                JMP  im_v2
+im_gl:          JMP  vgl_imm            ; 42 VGL (MBF = 0)
+
+im_v2:          XRL  A, #$01            ; A = R5 ^ 2: R5 = 3?
+                JZ   im_gr
+                SEL  MB0
+                JMP  vkl_imm            ; 44 VKL
+im_gr:          SEL  MB0
+                JMP  vgr_imm            ; 43 VGR
+
+; 5.06 SEF xxx (47): 6 Byte ab xxx im Bilderbereich (Sektor 0x500..0x5FD) der Bank, aus der das Programm geladen
+; wurde (S_PBANK, 0 = keine -> dunkel), auf die Anzeige; SEF 248 = eigene Blätter-Anzeige; SEF 254 = Position
+; aus dem Akku (Lauftexte, Animationen); SEF 255 löscht.
+; A = Befehl - 47 (aus s_imm), R1 -> Argument. Das Lesen macht Hälfte B (s_sef) mit F_ANF = xxx.
+s_sefa:         JNZ  sa_f002
+                MOVX A, @R1
+                CPL  A
+                JZ   sa_leer            ; SEF 255
+                DEC  A
+                JZ   sa_akku            ; SEF 254: Position aus dem Akku
+                JMP  s_sefc
+sa_f002:        JMP  b_f002
+sa_leer:        JMP  s_sefl
+sa_akku:        JMP  s_sefk
+
+s_sefc:         INC  A                  ; wieder xxx
+                CPL  A
+                JMP  s_sefb
+s_sefk:         MOV  R0, #ACCU_LSB
+                MOV  A, @R0
+                JMP  s_sefb
+
+s_sefb:         MOV  R0, #F_ANF
+                MOV  @R0, A
+                MOV  R0, #S_PBANK       ; keine Programmbank (getippt, vom Pi): dunkel
+                MOV  A, @R0
+                JZ   sb_leer
+                JMP  zb_s_sef
+sb_leer:        JMP  s_sefl
+
+s_sefl:         SEL  MB0
+                CALL clear_display
                 JMP  inc_pc

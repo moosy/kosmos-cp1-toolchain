@@ -54,7 +54,15 @@ $cmd = array(
   36 => "PSK",  # 36–38 nur mit Firmware 4.0 (SPI-Flash)
   37 => "FRD",
   38 => "FWR",
-  39 => "TSE"   # ab Firmware 4.02
+  39 => "TSE",  # ab Firmware 4.02
+  40 => "ADD#", # 40–46 ab Firmware 5.06: fester Wert statt Zelle, geschrieben als  ADD #5
+  41 => "SUB#",
+  42 => "VGL#",
+  43 => "VGR#",
+  44 => "VKL#",
+  45 => "UND#",
+  46 => "ODR#",
+  47 => "SEF"   # ab Firmware 5.06: Bild aus Bank 255
 );
 
 $cmddesc = array(
@@ -97,7 +105,15 @@ $cmddesc = array(
   36 => "Konstante %s auf den Stapel legen (nur Firmware 4.0)",
   37 => "Flash lesen: Bank, Adresse, Anzahl vom Stapel, ins RAM ab Zelle %s (nur Firmware 4.0)",
   38 => "Flash schreiben: Bank, Adresse, Anzahl vom Stapel, aus dem RAM ab Zelle %s (nur Firmware 4.0)",
-  39 => "Zifferntaste seit dem letzten TSE in den Akku, sonst 255; wartet nicht (%s; nur Firmware 4.02)"
+  39 => "Zifferntaste seit dem letzten TSE in den Akku, sonst 255; wartet nicht (%s; nur Firmware 4.02)",
+  40 => "Zum Akku den Wert %s addieren (ab Firmware 5.06)",
+  41 => "Vom Akku den Wert %s subtrahieren (ab Firmware 5.06)",
+  42 => "Prüfen, ob Akku gleich %s ist (ab Firmware 5.06)",
+  43 => "Prüfen, ob Akku größer als %s ist (ab Firmware 5.06)",
+  44 => "Prüfen, ob Akku kleiner als %s ist (ab Firmware 5.06)",
+  45 => "Akku bitweise UND %s (ab Firmware 5.06)",
+  46 => "Akku bitweise ODER %s (ab Firmware 5.06)",
+  47 => "Zellen %s bis +5 der Bilderbank 255 als Segmentmuster anzeigen (255 = Anzeige löschen; ab Firmware 5.06)"
 );
 
 $noarg = array("HLT","RET","PSH","POP");
@@ -213,6 +229,14 @@ for ($rounds=0; $rounds<2; $rounds++){ # two identical runs for labels
     $c1 = array_search($cs,$cmd);
     if ($c1 === false) die("ERROR: Command $cs not known (Line $line)!\n");
     $c2 = array_shift($li);
+    $imm = false;
+    if ($c1 > 0 && substr((string)$c2,0,1) == "#"){      # ADD #5: fester Wert (Firmware 5.06)
+      $c1 = array_search($cs."#",$cmd);
+      if ($c1 === false) die("ERROR: $cs has no #value form (Line $line)!\n");
+      $c2 = substr($c2,1);
+      if ($c2 === "") $c2 = array_shift($li);         # auch  ADD # 5
+      $imm = true;
+    }
     if (substr(trim($c2),0,1)=="|") $c2 = 0;
     if (substr(trim($c2),0,2)=="//") $c2 = 0;
     if (trim($c2)=="") $c2 = 0;
@@ -246,6 +270,7 @@ for ($rounds=0; $rounds<2; $rounds++){ # two identical runs for labels
       if (!$has_line) $bline = "($line)";
       if ($has_label) $arg = $has_label ." ($arg)";
       if (in_array($cs,$noarg)) $arg = "";
+      if ($imm) $arg = "#".$arg;
       $btfy[] = str_pad(" $bline $cs $arg",30)."$code  $dsc";
     } else {
     
@@ -255,6 +280,7 @@ for ($rounds=0; $rounds<2; $rounds++){ # two identical runs for labels
       if (!$has_line) $bline = "    ";
       if ($has_label) $arg = $has_label;
       if (in_array($cs,$noarg)) $arg = "";
+      if ($imm) $arg = "#".$arg;
       $btfy[] = str_pad("  $bline$cs $arg ",30)."$code  $dsc";
     }
     
