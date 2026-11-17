@@ -140,13 +140,25 @@ den Charakter des Geräts zu verlieren.
   Fehler in meinen Testskripten: „LoSt“ enthält ein o und galt als Würfel, und Segmentmuster wurden falsch zurückgelesen.
 - **Doku:** Schnellübersicht 6.20, `docs/firmware6-de.md`, die Routinenliste aus den Quellen (`routinen.py`). Die Angabe
   „4 MHz“ in der alten Doku war falsch, richtig sind 6 MHz bei ALE 400 kHz (von Michael gemessen).
-- **Bekannte Lücke:** INP nimmt nur Befehle bis 47 an, JOV und ZUF kommen nur über den Pi ins RAM.
+- **Bekannte Lücke:** INP nimmt nur Befehle bis 47 an, JOV und ZUF kommen nur über den Pi ins RAM (behoben in 6.21).
+
+## 2026-11-17 – 6.21: JOV und ZUF eintippen
+
+- **6.21:** INP nimmt jetzt Befehle bis 49 an. Die Grenze ist ein Byte im Original-Haken: `ADD A,#$d0` (256 − 48)
+  wurde `ADD A,#$ce` (256 − 50). Ist der Befehl zu groß, läuft die Addition über (Carry) und es kommt F-004.
+  Im Abbild ändern sich genau neun Bytes: dieses eine in allen acht unteren Kopien und die letzte Ziffer der Versionsanzeige.
+- **Fehler im Testgerüst gefunden:** `test_bilder`, `test_imm`, `test_sef` und `test_tse` endeten auch bei Fehlern mit
+  Exit-Code 0, und `alle_tests.sh` sah nur auf den Exit-Code. Ein Lauf meldete deshalb „ALLE GRÜN“, obwohl `test_imm`
+  „1 FEHLER“ zeigte (der alte Test erwartete bei 48 noch F-004). Jetzt setzen alle Tests den Exit-Code, und das Skript
+  verlangt zusätzlich „ALLES OK“ als letzte Zeile, in `v5/` und `v6/`. Frühere grüne Läufe sind trotzdem gültig:
+  Die Logs zeigten bei jeder Reihe „ALLES OK“.
 
 ## Chips und Stände
 
 | Firmware | SHA-256 (Anfang) | Wo |
 |---|---|---|
-| 6.20 | 9bd7de80 | Simulator, wartet auf 28C256 |
+| 6.21 | e595c1d5 | Simulator, wartet auf 28C256 |
+| 6.20 | 9bd7de80 | Simulator |
 | 6.10 | 1c65d5c9 | Simulator |
 | 6.00 | f0c70050 | Simulator |
 | 5.07 | bd35a143 | im CP1 (seit 2026-11-15) |

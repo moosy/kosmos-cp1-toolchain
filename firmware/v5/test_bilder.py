@@ -45,3 +45,4 @@ pruef('Gerät zeigt titel', bytes(m.anzeige()) == bilder[0][1], [hex(x) for x in
 m.bis(m.us + 500_000)
 pruef('dann lauf+3 (Lauftext-Schritt)', bytes(m.anzeige()) == bilder[2][1][3:9], ([hex(x) for x in m.anzeige()], text(m.anzeige())))
 print('ALLES OK' if not f else f'{f} FEHLER')
+sys.exit(1 if f else 0)

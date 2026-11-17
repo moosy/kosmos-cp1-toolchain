@@ -34,7 +34,7 @@ src = src[:i0] + "opcode_NEG:     SEL  MB1            ; -> NEG mit Maske (Block 
 rep("error_f006:     MOV  R4, #$06\n                JMP  show_error     ; F-006\n",
     "error_f006:     SEL  MB1            ; -> OVF-Schalter (Block 1101 über die Tabelle)\n                JMP  zu_s_f006\n                NOP\n")
 rep("ADD  A, #$e7        ; add (256 - 25) to check for max opcode",
-    "ADD  A, #$d0        ; (256 - 48): INP nimmt Befehle bis 47 an (5.06: 40..46 mit festem Wert, 47 SEF)")
+    "ADD  A, #$ce        ; (256 - 50): 6.21: INP nimmt Befehle bis 49 an (48 JOV, 49 ZUF; 5.06: bis 47)")
 # 5.06: Marken hinter den Zellenprüfungen von ADD/VGL/VGR/VKL für die Befehle mit festem Wert (nur Marken, Bytes gleich)
 rep("                JF1  execute_sub_trampoline ; if F1 is set, it's a SUB\n",
     "add_imm:        JF1  execute_sub_trampoline ; if F1 is set, it's a SUB\n")

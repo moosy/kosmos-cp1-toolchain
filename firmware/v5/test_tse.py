@@ -47,3 +47,4 @@ while m2.us < t + 2_000_000:
 dauer = (t_hlt - t - 100_000) / 1000 if t_hlt else None
 pruef('4 x VZG 250 ~ 1,15 s wie das Original (mit Interrupt)', dauer is not None and 1100 < dauer < 1200, dauer)
 print('ALLES OK' if not f else f'{f} FEHLER')
+sys.exit(1 if f else 0)

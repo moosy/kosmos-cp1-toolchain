@@ -70,13 +70,15 @@ for _ in range(40):
     if zelle(m1, 60) != zelle(m2, 60): pruef(f'Gegenprobe {op} {a} {w}', False, f'{zelle(m1, 60)} {zelle(m2, 60)}')
 pruef('40 Zufallsfälle gleich wie mit Zelle', True)
 
-# INP nimmt 46 an, 47 nicht
+# INP nimmt 47, 48 und 49 an (6.21), 50 nicht
+for b in (47, 48, 49):
+    m = CP1(ROM); t = m.us + 50_000
+    for i, k in enumerate(['0', '0', '0', 'out', str(b // 10), str(b % 10), '0', '0', '1', 'inp']): m.drueck(k, t + i * 120_000, 60)
+    m.bis(t + 1_500_000)
+    pruef(f'INP {b}.001 angenommen', m.intern.ram[0:2] == bytes([b, 1]), (m.intern.ram[0:2].hex(), text(m.anzeige())))
 m = CP1(ROM); t = m.us + 50_000
-for i, k in enumerate(['0', '0', '0', 'out', '4', '7', '0', '0', '1', 'inp']): m.drueck(k, t + i * 120_000, 60)
+for i, k in enumerate(['0', '0', '0', 'out', '5', '0', '0', '0', '1', 'inp']): m.drueck(k, t + i * 120_000, 60)
 m.bis(t + 1_500_000)
-pruef('INP 47.001 angenommen', m.intern.ram[0:2] == bytes([47, 1]), (m.intern.ram[0:2].hex(), text(m.anzeige())))
-m = CP1(ROM); t = m.us + 50_000
-for i, k in enumerate(['0', '0', '0', 'out', '4', '8', '0', '0', '1', 'inp']): m.drueck(k, t + i * 120_000, 60)
-m.bis(t + 1_500_000)
-pruef('INP 48.001: F 004', text(m.anzeige()).endswith('004'), text(m.anzeige()))
+pruef('INP 50.001: F 004 (6.21: bis 49)', text(m.anzeige()).endswith('004'), text(m.anzeige()))
 print('ALLES OK' if not f else f'{f} FEHLER')
+sys.exit(1 if f else 0)

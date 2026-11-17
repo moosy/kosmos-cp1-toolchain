@@ -208,7 +208,7 @@ Die unteren acht 2-KB-Blöcke sind gleich: das Kosmos-Original (nicht im Repo) m
 | 03DC | `rc_abfrage` | Statusabfrage vorbereiten (aus rt_hoch): RAM 0x20..0x3A, ab dem nächsten Takt je ein Byte |
 | 03EA | `rb_schreib` | 03 aa ww: ein Byte ins interne RAM (aus rc_befehl, R1 wird in rb_ende zurückgeholt) |
 
-## Sprungtabelle (59 Einträge, in jedem oberen Block an derselben Stelle)
+## Sprungtabelle (59 Einträge: 39 Sprünge zu_X, 20 Fernaufrufe fa_X; in jedem oberen Block an derselben Stelle)
 
 `zu_X` wechselt in den Block von X und springt (JMP). `fa_X` ist ein Fernaufruf von 1001 nach 1011: `ORL P1,#$20` / `CALL X` / `ANL P1,#$df` / `RET`, kostet eine Stapelebene.
 

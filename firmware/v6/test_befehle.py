@@ -45,7 +45,7 @@ pruef('UND auf Befehlszelle -> F-005', anz2 == 'F  005', anz2)
 _, anz = lauf([(LDA, 3), (NEG, 0), (HLT, 0), (7, 1)])        # Akku = Zelle 3 = 07.001 (kein Datum)
 pruef('NEG mit Befehl im Akku -> F-005', anz == 'F  005', anz)
 _, anz = lauf([(50, 0), (HLT, 0)])
-pruef('Befehl 50 -> F-002 (6.20: 40..49 belegt, 48 = JOV, 49 = ZUF)', anz == 'F  002', anz)
+pruef('Befehl 50 -> F-002 (6.20/6.21: 40..49 belegt, 48 = JOV, 49 = ZUF)', anz == 'F  002', anz)
 _, anz = lauf([(0, 5), (HLT, 0)])
 pruef('Befehl 00 (Datum ausführen) -> F-002', anz == 'F  002', anz)
 _, anz = lauf([(99, 0), (HLT, 0)])
@@ -81,8 +81,11 @@ def tippe(folge, cp3=True):
 m = tippe(['0', '0', '0', 'inp', '2', '5', '0', '1', '0', 'inp', '2', '6', '0', '0', '0', 'inp', '1', '4', '2', '5', '5', 'inp'])
 pruef('25.010, 26.000, 14.255 eingetippt', [tuple(m.intern.ram[2 * n:2 * n + 2]) for n in range(3)] == [(25, 10), (26, 0), (14, 255)],
       str([tuple(m.intern.ram[2 * n:2 * n + 2]) for n in range(3)]))
-m = tippe(['0', '0', '0', 'inp', '4', '8', '0', '0', '0', 'inp'])
-pruef('48.000 eintippen -> F-004 (5.06: bis 47)', text(m.anzeige()) == 'F  004', text(m.anzeige()))
+m = tippe(['0', '0', '0', 'inp', '4', '8', '0', '0', '5', 'inp', '4', '9', '0', '1', '6', 'inp'])
+pruef('6.21: 48.005 (JOV) und 49.016 (ZUF) eintippbar', [tuple(m.intern.ram[2 * n:2 * n + 2]) for n in range(2)] == [(48, 5), (49, 16)],
+      str([tuple(m.intern.ram[2 * n:2 * n + 2]) for n in range(2)]))
+m = tippe(['0', '0', '0', 'inp', '5', '0', '0', '0', '0', 'inp'])
+pruef('50.000 eintippen -> F-004 (6.21: bis 49)', text(m.anzeige()) == 'F  004', text(m.anzeige()))
 m = tippe(['0', '0', '0', 'inp', '2', '4', '0', '0', '1', 'inp'])
 pruef('24.001 geht weiterhin', tuple(m.intern.ram[0:2]) == (24, 1))
 SEG = 27

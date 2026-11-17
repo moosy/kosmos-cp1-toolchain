@@ -88,3 +88,4 @@ while m.us < t + 3_000_000:
 dauer = (t_ende - t - 100_000) / 20000 if t_ende else None
 pruef(f'SEF dauert {dauer:.1f} ms' if dauer else 'SEF Dauer', dauer is not None and dauer < 15, dauer)
 print('ALLES OK' if not f else f'{f} FEHLER')
+sys.exit(1 if f else 0)

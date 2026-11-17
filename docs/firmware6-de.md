@@ -1,6 +1,6 @@
 # Kosmos CP1 – Firmware 6.x (AT28C256)
 
-Stand 2026-11-17, Firmware **6.20**. Im Simulator fertig, alle 19 Testreihen grün. Noch nicht im Gerät, das läuft bis zur Ankunft der 28C256 mit **5.07** auf dem AT28C64B.
+Stand 2026-11-17, Firmware **6.21**. Im Simulator fertig, alle 19 Testreihen grün. Noch nicht im Gerät, das läuft bis zur Ankunft der 28C256 mit **5.07** auf dem AT28C64B.
 
 - Routinenliste mit Adressen: [`firmware6-routinen-de.md`](firmware6-routinen-de.md) (erzeugt)
 - Bedienung zum Ausdrucken: [`cp1-schnelluebersicht-6.pdf`](../cp1-schnelluebersicht-6.pdf), drei Seiten
@@ -19,6 +19,7 @@ Ab 6.00 gilt das Schema **M.mf**:
 | 6.00 | 28C256 mit 16 Blöcken. Projekte 01–99 statt Bänken, Verzeichnis in Bank 0. Bedienung `Pro`/`LdP`/`5to`/`bot`. Statische Stapelprüfung beim Bauen. |
 | 6.10 | **48 JOV** lädt ein Overlay und springt hinein. Die FNI-Hilfen liegen wieder in 1011. |
 | 6.20 | **49 ZUF**, Zufallszahl (Xorshift 16 Bit, Timer eingemischt). |
+| 6.21 | INP nimmt Befehle bis 49 an, JOV und ZUF lassen sich also auch eintippen. |
 
 ## Warum ein neuer Chip
 
@@ -55,7 +56,7 @@ Die Trennung zwischen 1001 und 1011 ist Absicht. Wer wissen will, was CAS tut, l
 
 ### Wechsel zwischen den Blöcken: die Sprungtabelle
 
-`build6.py` erzeugt oben in jedem Block 1xxx dieselbe Sprungtabelle, Byte für Byte gleich. Im Moment hat sie 59 Einträge und 353 Byte. Nur dort wird der Block gewechselt. Das geht, weil der nächste Befehl nach dem Umschalten von P1 schon aus dem anderen Block kommt, und zwar an derselben Stelle.
+`build6.py` erzeugt oben in jedem Block 1xxx dieselbe Sprungtabelle, Byte für Byte gleich. Im Moment hat sie 59 Einträge (39 Sprünge `zu_X`, 20 Fernaufrufe `fa_X`) und 353 Byte. Der Build meldet nur die 39 Sprungziele. Nur dort wird der Block gewechselt. Das geht, weil der nächste Befehl nach dem Umschalten von P1 schon aus dem anderen Block kommt, und zwar an derselben Stelle.
 
 - **`zu_X`** springt nach X, egal in welchem Block X liegt:
   `ORL P1,#$30` (→ 1111) `[ANL P1,#maske]` (→ Zielblock) `JMP X`.
@@ -136,7 +137,7 @@ Die vollständige Liste steht in den `.equ`-Zeilen von `bedienung.asm` und `trei
 | 49 | **ZUF n** | Akku = Zufallszahl 0 … n−1, `ZUF 0` = 0–255. Zustand: 16 Bit in der **letzten RAM-Zelle** (255 bzw. 127). Bei jedem Aufruf wird das Timer-Register eingemischt. Xorshift 7/9/8, Periode 65535, Werte ≥ n werden verworfen. Dauert ~0,9 ms. | `s_zuf` (1101) |
 | 50–99 | | F-002 | |
 
-**Bekannte Lücke:** INP nimmt nur Befehle bis 47 an. JOV und ZUF lassen sich deshalb **nicht über die Tastatur eintippen**, nur über den Pi (Assembler, Webseite). Die Grenze steckt im Original-Haken `ADD A,#$d0` in `build6.py`.
+**Eintippen:** Seit 6.21 nimmt INP Befehle bis 49 an, JOV und ZUF gehen also auch über die Tastatur. Die Grenze steckt im Original-Haken `ADD A,#$ce` (256 − 50) in `build6.py`. In 6.20 stand dort `#$d0`, und INP nahm nur Befehle bis 47.
 
 ### Overlays mit JOV
 
@@ -166,7 +167,7 @@ Beispiele: `examples/beispiel-overlay.koa`, `examples/minenflug-wuerfel.koa` (Mi
 | CAL | Projekte durchblättern (`Pro nn`, dann Kurzanzeige), Ziffern wählen direkt | lädt das gezeigte Projekt (`LdP nn`), im Leerlauf: `Pro __ Fr ___ to ___ d5t ___` lädt einen Teilbereich |
 | RUN | Start | `bot __` Autoboot-Projekt, 00 = aus |
 
-Beim Einschalten erscheint 1 s lang `6.20`, dann 2 s lang `bot nn`. Jede Taste bricht den Autoboot ab.
+Beim Einschalten erscheint 1 s lang `6.21`, dann 2 s lang `bot nn`. Jede Taste bricht den Autoboot ab.
 
 ## Bauen und testen
 
@@ -174,11 +175,12 @@ Beim Einschalten erscheint 1 s lang `6.20`, dann 2 s lang `bot nn`. Jede Taste b
 cd firmware
 cp /pfad/zu/cp1.asm .        # Kosmos-Original (asig, bitgleich zu MAME cp1-2716), nicht im Repo
 python3 v6/build6.py         # -> v6/cp1v6-eeprom.bin (32 KB), cp1v6.sym, cp1v6.ohneint
-sh v6/alle_tests.sh          # 19 Testreihen im Simulator (sim48)
+sh v6/alle_tests.sh          # 18 Testreihen im Simulator (sim48), mit PROJEKTE=<Ordner mit .cp1> 19
+                             # grün nur, wenn jede Reihe mit Exit-Code 0 und „ALLES OK“ endet
 python3 v6/routinen.py > ../docs/firmware6-routinen-de.md
 ```
 
-- **Erwarteter Hash** (SHA-256 des Abbilds), Anfang: 6.00 `f0c70050c6eeee32`, 6.10 `1c65d5c9d65e7161`, **6.20 `9bd7de80ba731d48`**.
+- **Erwarteter Hash** (SHA-256 des Abbilds), Anfang: 6.00 `f0c70050c6eeee32`, 6.10 `1c65d5c9d65e7161`, 6.20 `9bd7de80ba731d48`, **6.21 `e595c1d5c3480317`**.
 - **Pi-Software 6.x:** liegt in `firmware/v6/pi/` (`kosmos_remote.py`, `.html`, `kosmos_rc.c`, Assembler und Disassembler mit ZUF/JOV/LADE).
   - Im Hauptordner bleibt die Fassung für 5.07, solange das Gerät mit 5.07 läuft.
   - Die Tests in `v6/` nehmen automatisch die Fassung aus `pi/`.
@@ -186,7 +188,6 @@ python3 v6/routinen.py > ../docs/firmware6-routinen-de.md
 ## Offen
 
 - Brennen auf den 28C256, sobald die Chips da sind: erst lesen, dann schreiben, dann prüfen. Danach die Pi-Software aus `pi/` in den Hauptordner übernehmen.
-- INP für Befehle 48/49 freigeben (siehe oben).
 - Die LADE-Regel prüft der Assembler nicht.
 - `projekt-einspielen` löscht einen schon gesetzten Autoboot nicht.
 - Lädt der Pi ein Programm, schreibt er alle 256 Zellen. Dabei wird auch die ZUF-Zelle 0, was harmlos ist: ZUF macht aus 0 eine 1.

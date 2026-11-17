@@ -756,12 +756,12 @@ sb_r:           MOV  @R0, #$00          ; 0x20..0x47; LEER/AUFTRAG (0x16/0x17) u
                 MOV  @R0, #$01
                 EN   TCNTI
                 STRT T
-                MOV  R0, #$22           ; VRAM: _ _6.20 _ (Version M.mf: Architektur . Benutzer Fehler)
+                MOV  R0, #$22           ; VRAM: _ _6.21 _ (Version M.mf: Architektur . Benutzer Fehler)
                 MOV  @R0, #$fd          ; 6 mit Punkt
                 INC  R0
                 MOV  @R0, #$5b          ; 2
                 INC  R0
-                MOV  @R0, #$3f          ; 0   (Version 6.20)
+                MOV  @R0, #$06          ; 1   (Version 6.21)
                 MOV  R0, #S_ZAEHL       ; 4 x 250 ms (delay_millis braucht R2 und R3)
                 MOV  @R0, #4
 sb_w:           MOV  R3, #250

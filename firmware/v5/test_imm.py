@@ -80,3 +80,4 @@ for i, k in enumerate(['0', '0', '0', 'out', '4', '8', '0', '0', '1', 'inp']): m
 m.bis(t + 1_500_000)
 pruef('INP 48.001: F 004', text(m.anzeige()).endswith('004'), text(m.anzeige()))
 print('ALLES OK' if not f else f'{f} FEHLER')
+sys.exit(1 if f else 0)

@@ -1,8 +1,8 @@
-# Inhalt des Cheat Sheets für Firmware 6.20 (28C256) (wird von satz.py ausgeführt). Anzeigen im Raster "X YY ZZZ" wie am Gerät (8 88 888).
+# Inhalt des Cheat Sheets für Firmware 6.21 (28C256) (wird von satz.py ausgeführt). Anzeigen im Raster "X YY ZZZ" wie am Gerät (8 88 888).
 
 def seite1(s):
-    s.titel('Kosmos CP1 · Schnellübersicht', 'Firmware 6.20 · Stand 17.11.2026')
-    s.absatz('Firmware 6.20 auf dem AT28C256 im EA-Adapter (beim Einschalten 1 s `  6.20 `). Neu oder geändert: ★')
+    s.titel('Kosmos CP1 · Schnellübersicht', 'Firmware 6.21 · Stand 17.11.2026')
+    s.absatz('Firmware 6.21 auf dem AT28C256 im EA-Adapter (beim Einschalten 1 s `  6.21 `). Neu oder geändert: ★')
     s.balken('Funktionstasten')
     s.tabelle([17, 0], [
         ['**RUN**', 'Programmlauf starten (★ beim Loslassen). ★ **1 s halten:** Autoboot-Projekt wählen (`bot __`, Seite 2).'],
@@ -11,7 +11,7 @@ def seite1(s):
         ['**ACC · CLR**', 'Akku-Inhalt anzeigen · Anzeige löschen.'],
         ['**PC**', 'Programmzähler anzeigen; drei Ziffern + PC stellt ihn ein.'],
         ['**OUT**', 'Drei Ziffern + OUT: Zelle anwählen und anzeigen; weiteres OUT zeigt die nächste.'],
-        ['**INP**', 'Fünf Ziffern + INP: Zelleninhalt eingeben. ★ Befehle bis 47 erlaubt (Original: bis 24); 48 JOV und 49 ZUF nur über den Pi.'],
+        ['**INP**', 'Fünf Ziffern + INP: Zelleninhalt eingeben. ★ Befehle bis 49 erlaubt (Original: bis 24).'],
         ['**9 OUT**', 'Stand des Ein-/Ausgabezeigers anzeigen (`C   nnn`).'],
         ['★ **CAS/CAL**', 'Speicher in ein Projekt im Flash sichern · Projekte durchblättern und laden (Seite 2). Ersetzt die Kassette.'],
     ])
@@ -77,7 +77,7 @@ def seite2(s):
     s.balken('★ RUN 1 s: Autoboot · ★ Reset')
     s.tabelle([50, 0], [
         ['`bot __`, `09` RUN', 'beim Einschalten Projekt 09 laden und starten (`bot rdY`). **00** schaltet ab.'],
-        ['Einschalten', '`  6.20 `, dann `bot 09` für 2 s: **jede Taste bricht ab**, sonst wird geladen und gestartet.'],
+        ['Einschalten', '`  6.21 `, dann `bot 09` für 2 s: **jede Taste bricht ab**, sonst wird geladen und gestartet.'],
         ['**CLR halten + STP**', 'Reset wie Aus- und Einschalten: Speicher, Stapel, OVF weg; dann Version und Autoboot. Auch im Programmlauf.'],
     ])
     s.balken('★ SEG: eigene Zeichen auf der Anzeige')

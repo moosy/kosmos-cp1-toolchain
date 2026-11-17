@@ -76,7 +76,8 @@ for datei, wo in UNTEN:
     print(f'### `{datei}` → {wo}\n')
     print(tabelle(r) + '\n')
 tab = sorted((a, n) for n, a in sym.items() if re.match(r'(zu|fa)_', n) and a >= 0x7000)
-print(f'## Sprungtabelle ({len(tab)} Einträge, in jedem oberen Block an derselben Stelle)\n')
+nzu = sum(1 for a, n in tab if n.startswith('zu_'))
+print(f'## Sprungtabelle ({len(tab)} Einträge: {nzu} Sprünge zu_X, {len(tab) - nzu} Fernaufrufe fa_X; in jedem oberen Block an derselben Stelle)\n')
 print('`zu_X` wechselt in den Block von X und springt (JMP). `fa_X` ist ein Fernaufruf von 1001 nach 1011: '
       '`ORL P1,#$20` / `CALL X` / `ANL P1,#$df` / `RET`, kostet eine Stapelebene.\n')
 print(', '.join(f'`{n}`' for a, n in tab) + '\n')
