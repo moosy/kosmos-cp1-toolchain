@@ -1,4 +1,4 @@
-# CP1 firmware 5.x – sources
+# CP1 firmware 5.x and 6.x – sources
 
 Sources of the extended CP1 firmware (currently 5.05). The original Kosmos ROM is copyrighted, so
 **neither the original nor any built image is included**. The build patches the commented ROM
@@ -9,12 +9,24 @@ put that file into this directory first.
 firmware/
   cp1.asm            <- not included, copy it here from asig/kosmos-cp1
   asm48.py           own MCS-48 assembler (bit-exact with MAME cp1-2716 for the original)
-  v5/                firmware 5.x: sources, simulator, tests, review tools
+  v5/                firmware 5.x (AT28C64B): sources, simulator, tests, review tools
+  v6/                firmware 6.x (AT28C256): four block sources, build with stack check, simulator, tests,
+                     routinen.py (routine list), pi/ = Pi software for 6.x (not yet deployed)
   history/schnell/   firmware 3.0x (fast cassette, remote control) - reference only
   history/flash4/    firmware 4.0x (SPI flash) - reference only, expects the old v4/ layout
 ```
 
-Build (from this directory):
+Build 6.x (from this directory; German overview in ../docs/firmware6-de.md):
+
+```
+python3 v6/build6.py        # -> v6/cp1v6-eeprom.bin (32 KB for the AT28C256), cp1v6.sym; checks stack depth and space
+sh v6/alle_tests.sh         # 19 test series in the simulator
+python3 v6/routinen.py > ../docs/firmware6-routinen-de.md
+```
+
+SHA-256 of a correct 6.20 build starts with `9bd7de80`.
+
+Build 5.x (from this directory):
 
 ```
 python3 v5/build5.py        # -> v5/cp1v5.bin (4 KB view), v5/cp1v5-eeprom.bin (8 KB for the AT28C64B), v5/cp1v5.sym

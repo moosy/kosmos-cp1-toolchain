@@ -8,14 +8,20 @@ http://www.8bit-homecomputermuseum.at/computer/kosmos_computer_praxis_cp1.html.
 
 Quick reference (German, 3 pages A4, firmware 5.07 with all extensions): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
 
+**Firmware 6.x** for the AT28C256 (32 KB: four 2 KB blocks of own code, 99 projects in the flash, overlays with JOV,
+random numbers with ZUF) is finished in the simulator but not yet burned; the tools in this root directory still
+belong to 5.07. Overview with block layout (German): [docs/firmware6-de.md](docs/firmware6-de.md), every routine with
+its address: [docs/firmware6-routinen-de.md](docs/firmware6-routinen-de.md), quick reference 6.20:
+[cp1-schnelluebersicht-6.pdf](cp1-schnelluebersicht-6.pdf), sources and the matching Pi software: [firmware/v6/](firmware/v6/).
+
 Firmware internals, the terminal 7/8 protocol (K78P) with NIE and FNI, jobs and flash layout: [INTERNALS.md](INTERNALS.md)
 
 Everything else of the project is here too:
-- [firmware/](firmware/) - sources of the extended firmware 5.x, own assembler, simulator and tests
+- [firmware/](firmware/) - sources of the extended firmware 5.x and 6.x, own assembler, simulator and tests
   (the original ROM is copyrighted and not included; the build patches asig's `cp1.asm`)
 - [hardware/](hardware/) - the EA adapter board (KiCad generator, board, Gerber, schematic)
-- [docs/](docs/) - German project documentation (`firmware-de.md`) and the raw lab notebook (`laborbuch-de.md`)
-- [examples/](examples/) - Rakete, Lauftext, Asteroiden; [cheatsheet/](cheatsheet/) - sources of the quick reference
+- [docs/](docs/) - German project documentation (`firmware-de.md`, 6.x: `firmware6-de.md`) and the raw lab notebook (`laborbuch-de.md`)
+- [examples/](examples/) - Rakete, Lauftext, Asteroiden, Minenflug (6.x: with dice rescue, overlay package); [cheatsheet/](cheatsheet/) - sources of the quick reference
 - `kosmos-remote.service` - systemd unit for the web page
 
 This toolchain consists of the following tools:

@@ -138,10 +138,13 @@ class Seite:
                 f'<rect width="{W}" height="{H}" fill="#FFFFFF"/>' + ''.join(s.el) + '</svg>')
 
 
-exec(open('inhalt.py', encoding='utf-8').read())       # definiert SEITEN: Liste von Funktionen(seite)
+# Aufruf: python3 satz.py [inhalt.py [ausgabe.pdf]]  (6.x: python3 satz.py inhalt6.py cp1-schnelluebersicht-6.pdf)
+INHALT = sys.argv[1] if len(sys.argv) > 1 else 'inhalt.py'
+AUSGABE = sys.argv[2] if len(sys.argv) > 2 else 'cp1-schnelluebersicht.pdf'
+exec(open(INHALT, encoding='utf-8').read())       # definiert SEITEN: Liste von Funktionen(seite)
 dateien = []
 for i, f in enumerate(SEITEN, 1):
     sv = Seite(); f(sv)
     print(f'Seite {i}: Höhe {sv.y:.0f} von {H - RAND:.0f} pt', 'ZU LANG' if sv.y > H - RAND + 2 else '')
     fn = f'seite{i}.svg'; open(fn, 'w').write(sv.svg()); dateien.append(fn)
-subprocess.run(['rsvg-convert', '-f', 'pdf', '-o', 'cp1-schnelluebersicht.pdf'] + dateien, check=True)
+subprocess.run(['rsvg-convert', '-f', 'pdf', '-o', AUSGABE] + dateien, check=True)

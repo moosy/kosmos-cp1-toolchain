@@ -1,0 +1,513 @@
+// Minenflug mit Würfelrettung (ab Firmware 6.20: ZUF, JOV)
+// Overlay-Paket: Kern in Bank 0, Teil 1 = Spielschleife, Teil 2 = Würfelspiel. Beide teilen sich den Bereich.
+// Nach jedem Absturz: 3 x würfeln (Zifferntaste stoppt das hüpfende o). Summe >= 12: PhEU, Leben und Punkte
+// bleiben. Sonst LoSt: Punkte weg, ein Leben weniger (wie bisher).
+// Grundlage: Minenflug aus dem Gerät (Sicherung 2026-11), Zufall jetzt per ZUF.
+.bereich 040-219
+>>kern
+      OVF 0
+      SEF titel
+      TST
+>neu:
+// Startwerte (leben … d5) aus der eigenen Bank neu laden
+      PSK 0
+      PSK leben
+      PSK 16
+      FRD leben
+      JSR leds
+      LADE spiel
+>leds:
+      AKO bar
+      ADD pkt
+      ABS zq
+      LIA zq
+      P2A 0
+      AKO bar
+      ADD leben
+      ABS zq
+      LIA zq
+      P4A 0
+>nix:
+      RET
+// Absturz (aus pruef, also aus einem Unterprogramm): Rücksprung verwerfen, dann würfeln
+>crash:
+      SEF explo
+      VZG 250
+      VZG 250
+      POP
+      LADE wuerfel
+// Würfelteil: Summe >= 12
+>gerettet:
+      AKO 6
+      ABS spos
+      LADE spiel
+>ende:
+      SEF ende
+      TST
+      LDA total
+      ANZ
+      TST
+      SPU neu
+
+// Daten: Adressen wie im Original (tab + 4 = 243, gtab + 4 = 244, bar + 8 = 253 = 0)
+>leben:
+220   # 3
+>pkt:
+      # 0
+>total:
+      # 0
+>nmin:
+      # 0
+>sx:
+      # 0
+>sy:
+      # 0
+>spos:
+      # 6
+>sdir:
+      # 0
+>srow:
+      # 0
+>tempo:
+      # 34
+>d0:
+      # 0
+>d1:
+      # 0
+>d2:
+      # 0
+>d3:
+      # 0
+>d4:
+      # 0
+>d5:
+      # 0
+>cnt:
+      # 0
+>tmp:
+238   # 0
+>tab:
+      # 92
+>gtab:
+      # 8
+>zp:
+      # 0
+>zq:
+      # 0
+      # 99
+      # 1
+>bar:
+      # 255
+      # 254
+      # 252
+      # 248
+      # 240
+      # 224
+      # 192
+      # 128
+// 253: 0 (bar + 8), 255: Zustand für ZUF
+
+>>teil 1 spiel
+>loop:
+      JSR zeichne
+      LDA tempo
+      ABS cnt
+>warte:
+      TSE
+      VGL #4
+      SPB links
+      VGL #6
+      SPB rechts
+      VGL #8
+      SPB hoch
+      VGL #2
+      SPB runter
+>wweiter:
+      LDA cnt
+      SUB #1
+      ABS cnt
+      VGL #0
+      SPB tick
+      SPU warte
+>links:
+      LDA sx
+      VGL #0
+      SPB wweiter
+      SUB #1
+      ABS sx
+      SPU bewegt
+>rechts:
+      LDA sx
+      VGL #5
+      SPB wweiter
+      ADD #1
+      ABS sx
+      SPU bewegt
+>hoch:
+      AKO 4
+      ABS sy
+      SPU bewegt
+>runter:
+      AKO 0
+      ABS sy
+>bewegt:
+      JSR pruef
+      JSR zeichne
+      SPU wweiter
+>tick:
+      LDA spos
+      VGR #5
+      SPB spawn
+      ADD sdir
+      ABS spos
+      SPU minen
+>spawn:
+      ZUF 0
+      VGR #70
+      SPB minen
+      UND #4
+      ABS srow
+      AKO 255
+      ABS sdir
+      AKO 5
+      ABS spos
+      LDA sx
+      VKL #3
+      SPB minen
+      AKO 1
+      ABS sdir
+      AKO 0
+      ABS spos
+>minen:
+      LDA nmin
+      VGL #3
+      SPB fertig
+      ZUF 16
+      VGR #5
+      SPB fertig
+      VGL sx
+      SPB fertig
+      ADD #d0
+      ABS zp
+      LIA zp
+      VGR #0
+      SPB fertig
+      AKO 128
+      AIS zp
+      LDA nmin
+      ADD #1
+      ABS nmin
+>fertig:
+      JSR pruef
+      SPU loop
+>pruef:
+      LDA spos
+      VGL sx
+      SPB pr2
+>sammeln:
+      LDA sy
+      VGR #0
+      SPB snix
+      AKO d0
+      ADD sx
+      ABS zp
+      LIA zp
+      VGL #0
+      SPB snix
+      AKO 0
+      AIS zp
+      LDA nmin
+      SUB #1
+      ABS nmin
+      LDA total
+      ADD #1
+      ABS total
+      LDA pkt
+      ADD #1
+      ABS pkt
+      VGL #8
+      SPB extra
+      SPU leds
+>pr2:
+      LDA srow
+      VGL sy
+      SPB crash
+      SPU sammeln
+>extra:
+      AKO 0
+      ABS pkt
+      LDA leben
+      VGL #8
+      SPB schneller
+      ADD #1
+      ABS leben
+>schneller:
+      LDA tempo
+      VKL #12
+      SPB leds
+      SUB #3
+      ABS tempo
+      SPU leds
+>zeichne:
+      AKO tab
+      ADD sy
+      ABS zq
+      LIA zq
+      ABS tmp
+      AKO d0
+      ADD sx
+      ABS zp
+      LIA zp
+      ODR tmp
+      AIS zp
+      LDA spos
+      VGR #5
+      SPB zseg
+      AKO gtab
+      ADD srow
+      ABS zq
+      LIA zq
+      ABS tmp
+      AKO d0
+      ADD spos
+      ABS zq
+      LIA zq
+      ODR tmp
+      AIS zq
+>zseg:
+      SEG d0
+      LIA zp
+      UND #128
+      AIS zp
+      LDA spos
+      VGR #5
+      SPB snix
+      LIA zq
+      UND #128
+      AIS zq
+>snix:
+      RET
+
+>>teil 2 wuerfel
+// Drei Würfe. Ein o hüpft (oben/unten im Wechsel) hin und her, bis eine Zifferntaste kommt,
+// dann noch 2..5 langsamere Sprünge, und es bleibt als [4] liegen.
+>wstart:
+      AKO 3
+      ABS wn
+      AKO 0
+      ABS wsum
+      AKO r0
+      ABS wq
+>wwurf:
+      AKO we0
+      ABS wp
+      AKO 1
+      ABS wdir
+      AKO 99
+      ABS wo
+      AKO 0
+      ABS wx
+      TSE
+>whupf:
+      JSR wbild
+      VZG 70
+      LDA wx
+      VGL #0
+      SPB wtaste
+      VZG 120
+      LDA wx
+      SUB #1
+      ABS wx
+      VGL #0
+      SPB wland
+      SPU whupf
+>wtaste:
+      TSE
+      VGL #255
+      SPB whupf
+      ZUF 4
+      ADD #2
+      ABS wx
+      SPU whupf
+>wland:
+      ZUF 6
+      ADD #1
+      ABS wr
+      LDA wsum
+      ADD wr
+      ABS wsum
+      AKO 0
+      AIS wp
+      LDA wp
+      VGR #we3
+      SPB wrand
+      SPU wklammer
+>wrand:
+      AKO we3
+      ABS wp
+>wklammer:
+      AKO 57
+      AIS wp
+      LDA wp
+      ADD #1
+      ABS wp
+      LDA wr
+      AS3 wt
+      LDA wt
+      AIS wp
+      AIS wq
+      LDA wq
+      ADD #1
+      ABS wq
+      LDA wp
+      ADD #1
+      ABS wp
+      AKO 15
+      AIS wp
+      SEG we0
+      AKO 4
+      JSR wwarte
+>wleer:
+      AKO 0
+      AIS wp
+      LDA wp
+      VGL #we0
+      SPB wnaechst
+      SUB #1
+      ABS wp
+      SPU wleer
+>wnaechst:
+      LDA wn
+      SUB #1
+      ABS wn
+      VGL #0
+      SPB wende
+      SPU wwurf
+// Ergebnis: „462 12“, dann PhEU oder LoSt
+>wende:
+      LDA wsum
+      AS2 r4
+      LDA wsum
+      AS3 r5
+      SEG r0
+      AKO 6
+      JSR wwarte
+      LDA wsum
+      VGR #11
+      SPB wphew
+      SEF lost
+      AKO 6
+      JSR wwarte
+      AKO 3
+      ABS tmp
+>wblink:
+      AKO 0
+      P2A 0
+      VZG 120
+      AKO 255
+      P2A 0
+      VZG 120
+      LDA tmp
+      SUB #1
+      ABS tmp
+      VGR #0
+      SPB wblink
+      AKO 0
+      ABS pkt
+      AKO 6
+      ABS spos
+      LDA leben
+      SUB #1
+      ABS leben
+      JSR leds
+      LDA leben
+      VGL #0
+      SPB ende
+      LADE spiel
+>wphew:
+      SEF phew
+      AKO 6
+      JSR wwarte
+      SPU gerettet
+// eine Stelle weiter (am Rand umkehren), o oben <-> unten, anzeigen
+>wbild:
+      AKO 0
+      AIS wp
+      LDA wp
+      VGL #we5
+      SPB wlinks
+      VGL #we0
+      SPB wrechts
+      SPU wweiter2
+>wlinks:
+      AKO 255
+      ABS wdir
+      SPU wweiter2
+>wrechts:
+      AKO 1
+      ABS wdir
+>wweiter2:
+      LDA wp
+      ADD wdir
+      ABS wp
+      LDA wo
+      NEG 63
+      ABS wo
+      AIS wp
+      SEG we0
+      RET
+// Akku x 250 ms warten
+>wwarte:
+      ABS wc
+>wwl:
+      VZG 250
+      LDA wc
+      SUB #1
+      ABS wc
+      VGR #0
+      SPB wwl
+      RET
+>wn:
+      # 0
+>wsum:
+      # 0
+>wq:
+      # 0
+>wr:
+      # 0
+>wt:
+      # 0
+>wp:
+      # 0
+>wdir:
+      # 0
+>wo:
+      # 0
+>wx:
+      # 0
+>wc:
+      # 0
+>we0:
+      # 0
+>we1:
+      # 0
+>we2:
+      # 0
+>we3:
+      # 0
+>we4:
+      # 0
+>we5:
+      # 0
+>r0:
+      # 0
+>r1:
+      # 0
+>r2:
+      # 0
+>r3:
+      # 0
+>r4:
+      # 0
+>r5:
+      # 0

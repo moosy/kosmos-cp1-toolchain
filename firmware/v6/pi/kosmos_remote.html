@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kosmos CP1 Fernsteuerung</title>
+<style>
+  :root {
+    --gehaeuse: #3b4541; --gehaeuse-dunkel: #2b3330; --feld: #1c2220;
+    --taste: #f3efe4; --taste-rand: #c9c3b2; --taste-text: #151515;
+    --led-an: #ff2a3d; --led-aus: #3a1115; --anzeige: #170608;
+    --text: #e9ece8; --grau: #9aa59f; --gut: #6fd08c; --schlecht: #ff8a7a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #202624; color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 18px; font-weight: 650; margin: 0 0 14px; letter-spacing: .02em; }
+  h1 small { color: var(--grau); font-weight: 400; }
+  .geraet { background: linear-gradient(180deg, var(--gehaeuse), var(--gehaeuse-dunkel));
+            border-radius: 14px; padding: 22px 20px 24px; box-shadow: 0 10px 30px #0008, inset 0 1px 0 #ffffff14; }
+  .oben { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  .anzeige { background: var(--anzeige); border-radius: 6px; padding: 14px 16px; box-shadow: inset 0 2px 8px #000c; }
+  .anzeige svg { display: block; width: min(420px, 82vw); height: auto; }
+  .info { display: grid; grid-template-columns: auto auto; gap: 2px 12px; font-variant-numeric: tabular-nums; color: var(--grau); }
+  .info b { color: var(--text); font-weight: 600; }
+  .status { margin-top: 6px; font-size: 13px; }
+  .status.gut { color: var(--gut); } .status.schlecht { color: var(--schlecht); }
+  .feld { margin-top: 20px; background: var(--feld); border-radius: 10px; padding: 16px; }
+  .reihe { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .reihe:last-child { margin-bottom: 0; }
+  .reihe.ziffern button { width: 52px; height: 52px; border-radius: 50%; font-size: 22px; }
+  button.t { background: var(--taste); color: var(--taste-text); border: 0; border-bottom: 3px solid var(--taste-rand);
+             border-radius: 9px; min-width: 104px; height: 50px; font: 800 19px/1 system-ui, sans-serif; cursor: pointer;
+             display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+             touch-action: none; user-select: none; -webkit-user-select: none; }
+  button.t small { font-size: 9.5px; font-weight: 500; color: #555; }
+  button.t:active, button.t.gedrueckt { transform: translateY(2px); border-bottom-width: 1px; background: #fff; }
+  button.t:focus-visible { outline: 3px solid #7fb8ff; outline-offset: 2px; }
+  .einzug1 { padding-left: 40px; } .einzug2 { padding-left: 70px; }
+  .hinweis { color: var(--grau); font-size: 13px; margin: 10px 2px 0; }
+  .panele { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+  @media (max-width: 720px) { .panele { grid-template-columns: 1fr; } .einzug1, .einzug2 { padding-left: 0; } }
+  .panel { background: #2a312e; border-radius: 10px; padding: 14px 16px; }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+  .panel label { color: var(--grau); font-size: 13px; }
+  textarea, input[type=number], input[type=text] { width: 100%; background: #171c1a; color: var(--text); border: 1px solid #3d4642;
+             border-radius: 6px; padding: 8px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+  textarea { min-height: 150px; resize: vertical; }
+  input[type=number] { width: 80px; }
+  .knoepfe { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  button.b { background: #4d6b5c; color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; font-weight: 600; cursor: pointer; }
+  button.b.zweit { background: #3d4642; }
+  button.b:disabled { opacity: .5; cursor: progress; }
+  pre { background: #171c1a; border-radius: 6px; padding: 8px; max-height: 260px; overflow: auto; font-size: 12.5px; margin: 10px 0 0; }
+  .meldung { font-size: 13px; margin-top: 8px; min-height: 1.4em; }
+  .klein { font-size: 12px; color: var(--grau); }
+  input[type=text] { width: 190px; }
+  .panel.breit { grid-column: 1 / -1; }
+  .miniAnz { display: inline-block; background: var(--anzeige); border-radius: 4px; padding: 3px 5px; vertical-align: middle; }
+  .miniAnz svg { display: block; width: 110px; height: auto; }
+  .editor { display: grid; grid-template-columns: 1fr 220px; gap: 12px; margin-top: 10px; }
+  .editor textarea { min-height: 420px; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 4; }
+  .editor .rechts { display: flex; flex-direction: column; gap: 6px; }
+  .editor .rechts textarea { min-height: 0; flex: 1; }
+  .editor .rechts #namen { flex: 3; }  .editor .rechts #bilder { flex: 2; }
+  @media (max-width: 720px) { .editor { grid-template-columns: 1fr; } .editor textarea, .editor .rechts textarea { min-height: 200px; } }
+  table.verz { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; font-size: 14px; }
+  table.verz th { text-align: left; color: var(--grau); font-weight: 500; font-size: 12.5px; padding: 4px 6px; border-bottom: 1px solid #3d4642; }
+  table.verz td { padding: 5px 6px; border-bottom: 1px solid #333b38; }
+  table.verz td.knopf { text-align: right; white-space: nowrap; }
+  table.verz button.b { padding: 4px 9px; font-size: 13px; }
+  .stern { color: #ffd479; }
+  table.zellen input[type=number] { width: 70px; padding: 3px 6px; }
+  table.zellen td.geaendert input { border-color: var(--gut); }
+  @media (max-width: 520px) { table.verz td.start, table.verz th.start { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kosmos CP1 <small>· Fernsteuerung über den bastelpi</small></h1>
+
+  <section class="geraet">
+    <div class="oben">
+      <div class="anzeige" aria-label="Anzeige"><svg id="anz" viewBox="0 0 430 92" role="img"></svg></div>
+      <div>
+        <div class="info">
+          <span>Akku</span><b id="akku">–</b>
+          <span>PC</span><b id="pc">–</b>
+        </div>
+        <div id="status" class="status">verbinde …</div>
+        <label class="klein"><input type="checkbox" id="live" checked> Anzeige live</label>
+        <button class="b zweit" id="resetK" title="Kaltstart wie beim Einschalten: Programm und alle Daten im CP1 werden gelöscht">Reset</button>
+      </div>
+    </div>
+
+    <div class="feld" id="tastatur">
+      <div class="reihe ziffern" id="ziffern"></div>
+      <div class="reihe einzug1">
+        <button class="t" data-k="step">STEP<small>Schritt</small></button>
+        <button class="t" data-k="stp">STP<small>Stopp</small></button>
+        <button class="t" data-k="run">RUN<small>Lauf</small></button>
+        <button class="t" data-k="cal">CAL<small>Flash laden</small></button>
+      </div>
+      <div class="reihe einzug2">
+        <button class="t" data-k="clr">CLR<small>Irrtum</small></button>
+        <button class="t" data-k="acc">ACC<small>Akku</small></button>
+        <button class="t" data-k="cas">CAS<small>Flash speichern</small></button>
+      </div>
+      <div class="reihe einzug2">
+        <button class="t" data-k="pc">PC<small>Programmzähler</small></button>
+        <button class="t" data-k="out">OUT<small>auslesen</small></button>
+        <button class="t" data-k="inp">INP<small>eingeben</small></button>
+      </div>
+      <p class="hinweis">Tasten so lange halten wie am Gerät: CAS kurz = ganzes RAM ins Projekt, CAL kurz = Projekte blättern, lang (1 s) = Bereich; RUN lang = Autoboot. Tastatur: Ziffern, Enter = INP, P = PC, R = RUN, S = STP, Leertaste = STEP, C = CLR, A = ACC, O = OUT.</p>
+    </div>
+  </section>
+
+  <div class="panele">
+    <section class="panel breit">
+      <h2>Programm <span class="klein">· holen, ändern, zurückspielen</span></h2>
+      <div class="knoepfe" style="margin-top:0">
+        <button class="b zweit" id="holenAlles">Aus CP1 holen</button>
+        <span class="klein">oder Zellen</span>
+        <input type="number" id="von" min="0" max="255" value="0" aria-label="von">
+        <span class="klein">bis</span>
+        <input type="number" id="bis" min="0" max="255" value="127" aria-label="bis">
+        <button class="b zweit" id="holenTeil">Bereich holen</button>
+        <label class="b zweit" style="cursor:pointer">Datei öffnen …<input type="file" id="datei" accept=".koa,.json,.txt" hidden></label>
+      </div>
+      <div class="editor">
+        <div>
+          <label for="quelle">Quelltext (Marken mit Zeilennummer; die Nummern setzt „Assemblieren“ neu)</label>
+          <textarea id="quelle" spellcheck="false" placeholder=">start:&#10;  AKO 123&#10;  ANZ&#10;  HLT"></textarea>
+        </div>
+        <div class="rechts">
+          <label for="namen">Namen (Adresse=Name)</label>
+          <textarea id="namen" spellcheck="false" placeholder="035=display_loop&#10;134=punkte"></textarea>
+          <label for="bilder" title="Bilder für SEF (ab Firmware 5.06): liegen im Flash des Projekts, nicht im RAM. Im Programm: SEF titel, SEF lauf+3. „.“ = Punkt, #1,2,3 = Segmentwerte. Gelten, nachdem das Programm mit „Editor speichern“ im Projekt liegt.">Bilder für SEF (Name=Text)</label>
+          <textarea id="bilder" spellcheck="false" placeholder="titel=MInEn&#10;explo=8.8.8.8.8.8.&#10;lauf=  HALLO CP1  "></textarea>
+        </div>
+      </div>
+      <div class="knoepfe">
+        <button class="b zweit" id="assemblieren">Assemblieren</button>
+        <button class="b" id="ladenQ">In CP1 laden</button>
+        <button class="b zweit" id="alsKoa">Als .koa sichern</button>
+        <button class="b zweit" id="alsJson">Als .json sichern</button>
+      </div>
+      <div class="meldung" id="ladenM"></div>
+    </section>
+    <section class="panel breit">
+      <h2>Flash <span class="klein">· Projekte 01–99 (Firmware 6.00), nur wenn kein Programm läuft</span></h2>
+      <div class="knoepfe">
+        <button class="b" id="verzLesen">Verzeichnis lesen</button>
+        <span class="klein" id="autoInfo"></span>
+        <button class="b zweit" id="autoAus" hidden>Autoboot aus</button>
+      </div>
+      <table class="verz" id="verz" hidden>
+        <thead><tr><th>Nr.</th><th>Name</th><th class="start">Bänke</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="knoepfe" style="margin-top:14px">
+        <span class="klein">In Projekt</span>
+        <input type="number" id="fBank" min="1" max="99" value="1" aria-label="Projekt">
+        <input type="text" id="fName" maxlength="16" placeholder="Name (16 Zeichen)" aria-label="Name">
+        <span class="klein">Start</span>
+        <input type="number" id="fStart" min="0" max="255" placeholder="PC" aria-label="Startadresse">
+        <span class="klein">Anzeige</span>
+        <input type="text" id="fAnz" maxlength="12" placeholder="aus dem Namen" aria-label="Anzeige beim Blättern (6 Stellen)" style="width:120px"
+               title="So erscheint das Projekt beim Blättern mit CAL (6 Stellen, „.“ = Punkt). Leer: die ersten Buchstaben des Namens.">
+        <span class="miniAnz"><svg id="anzVorschau" viewBox="0 0 430 92" role="img" aria-label="Vorschau der Anzeige"></svg></span>
+        <button class="b" id="fSpeichern" title="Inhalt des CP1-RAM ins Projekt (neu: der CP1 legt es an; Start leer = PC)">RAM speichern</button>
+        <button class="b zweit" id="fEditor" title="Programm aus dem Editor assemblieren und mit den Namen direkt in die erste Bank des Projekts schreiben, das RAM bleibt unberührt">Editor speichern</button>
+      </div>
+      <div class="meldung" id="flashM"></div>
+    </section>
+    <section class="panel breit">
+      <h2>Zellen <span class="klein">· einzeln lesen und ändern, auch während ein Programm läuft</span></h2>
+      <div class="knoepfe">
+        <span class="klein">ab Zelle</span>
+        <input type="number" id="zVon" min="0" max="255" value="0" aria-label="ab Zelle">
+        <span class="klein">Anzahl</span>
+        <input type="number" id="zAnz" min="1" max="32" value="8" aria-label="Anzahl">
+        <button class="b" id="zLesen">Lesen</button>
+        <label class="klein"><input type="checkbox" id="zLive"> mitlaufen</label>
+      </div>
+      <table class="verz zellen" id="zTab" hidden>
+        <thead><tr><th>Zelle</th><th>Befehl</th><th>Argument</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="meldung" id="zM"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+
+// ---- 7-Segment-Anzeige, Gruppen 8 88 888
+const X = [10, 92, 154, 250, 312, 374];
+function stelle(svg, x) {
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('transform', `translate(${x},8) skewX(-6)`);
+  const L = 30, D = 6;
+  const seg = {
+    a: [D, 0, L, D], g: [D, L + D, L, D], d: [D, 2 * L + 2 * D, L, D],
+    f: [0, D, D, L], b: [L + D, D, D, L], e: [0, L + 2 * D, D, L], c: [L + D, L + 2 * D, D, L]
+  };
+  const els = {};
+  for (const [k, [sx, sy, w, h]] of Object.entries(seg)) {
+    const r = document.createElementNS(NS, 'rect');
+    Object.entries({ x: sx + .8, y: sy + .8, width: w - 1.6, height: h - 1.6, rx: 2.5 }).forEach(([a, v]) => r.setAttribute(a, v));
+    g.appendChild(r); els[k] = r;
+  }
+  const p = document.createElementNS(NS, 'circle');
+  p.setAttribute('cx', L + 2 * D + 5); p.setAttribute('cy', 2 * L + 2.5 * D); p.setAttribute('r', 3.6);
+  g.appendChild(p); els.p = p;
+  svg.appendChild(g);
+  return els;
+}
+const anz = $('#anz');
+const stellen = X.map(x => stelle(anz, x));
+function zeigeIn(st, seg) {
+  const bits = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'p'];
+  seg.forEach((v, i) => bits.forEach((k, b) =>
+    st[i][k].setAttribute('fill', v >> b & 1 ? 'var(--led-an)' : 'var(--led-aus)')));
+}
+const zeige = seg => zeigeIn(stellen, seg);
+const vorschau = X.map(x => stelle($('#anzVorschau'), x));
+zeigeIn(vorschau, [0, 0, 0, 0, 0, 0]);
+let vorschauT = null;
+function anzVorschau() {
+  clearTimeout(vorschauT);
+  vorschauT = setTimeout(async () => {
+    const eigen = $('#fAnz').value.trim();
+    const obj = eigen ? { text: eigen } : { text: $('#fName').value, wie_firmware: true };   // leer: wie der CP1 den Namen zeigt
+    try { zeigeIn(vorschau, (await api('/api/anzeige_vorschau', obj)).seg); } catch (e) {}
+  }, 250);
+}
+zeige([0, 0, 0, 0, 0, 0]);
+
+// ---- Schnittstelle
+let beschaeftigt = 0;
+async function api(pfad, obj) {
+  const r = await fetch(pfad, obj ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) } : {});
+  const j = await r.json().catch(() => ({ fehler: 'keine Antwort vom Server' }));
+  if (!r.ok) throw new Error(j.fehler || r.statusText);
+  return j;
+}
+function status(text, gut) { const s = $('#status'); s.textContent = text; s.className = 'status ' + (gut ? 'gut' : 'schlecht'); }
+
+let runde = 0;
+async function abfragen() {
+  if (beschaeftigt) return;
+  try {
+    const a = await api('/api/anzeige' + (runde++ % 3 ? '' : '?mehr=1'));
+    zeige(a.seg);
+    if (a.akku !== undefined) {
+      const lsb = a.akku & 255;
+      $('#akku').textContent = String(a.akku >> 8).padStart(2, '0') + '.' + String(lsb).padStart(3, '0') + (lsb > 127 ? ` (${lsb - 256})` : '');
+      $('#pc').textContent = String(a.pc).padStart(3, '0');
+    }
+    status('verbunden · „' + a.text + '“', true);
+  } catch (e) {
+    status(e.message, false);
+  }
+}
+async function schleife() {
+  if ($('#live').checked) await abfragen();
+  setTimeout(schleife, 1000);
+}
+schleife();
+
+// ---- Tasten (Dauer = wie lange gedrückt)
+const z = $('#ziffern');
+for (const d of '0123456789') { const b = document.createElement('button'); b.className = 't'; b.dataset.k = d; b.textContent = d; z.appendChild(b); }
+let warteschlange = Promise.resolve();
+function senden(k, ms) {
+  warteschlange = warteschlange.then(async () => {
+    beschaeftigt++;
+    try { await api('/api/taste', { tasten: [`${k}:${Math.max(80, Math.min(3900, Math.round(ms)))}`] }); }
+    catch (e) { status(e.message, false); }
+    finally { beschaeftigt--; }
+    abfragen();
+  });
+}
+document.querySelectorAll('button.t').forEach(b => {
+  let t0 = 0;
+  b.addEventListener('pointerdown', e => { t0 = performance.now(); b.setPointerCapture(e.pointerId); b.classList.add('gedrueckt'); });
+  b.addEventListener('pointerup', () => { if (!t0) return; b.classList.remove('gedrueckt'); senden(b.dataset.k, performance.now() - t0); t0 = 0; });
+  b.addEventListener('pointercancel', () => { b.classList.remove('gedrueckt'); t0 = 0; });
+  b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); } });
+});
+const KEYS = { Enter: 'inp', p: 'pc', r: 'run', s: 'stp', ' ': 'step', c: 'clr', a: 'acc', o: 'out' };
+const gedrueckt = {};
+document.addEventListener('keydown', e => {
+  if (e.target.matches('textarea, input')) return;
+  const k = /^[0-9]$/.test(e.key) ? e.key : KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (!k) return;
+  e.preventDefault();
+  if (!gedrueckt[k]) { gedrueckt[k] = performance.now(); document.querySelector(`button[data-k="${k}"]`)?.classList.add('gedrueckt'); }
+});
+document.addEventListener('keyup', e => {
+  const k = /^[0-9]$/.test(e.key) ? e.key : KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (!k || !gedrueckt[k]) return;
+  document.querySelector(`button[data-k="${k}"]`)?.classList.remove('gedrueckt');
+  senden(k, performance.now() - gedrueckt[k]); delete gedrueckt[k];
+});
+
+$('#resetK').onclick = async () => {
+  if (!confirm('CP1 zurücksetzen? Programm und alle Daten im Speicher werden gelöscht (wie Aus- und Einschalten, danach ggf. Autoboot).')) return;
+  const k = $('#resetK'); k.disabled = true; beschaeftigt++;
+  try { const r = await api('/api/reset', {}); status('Reset · „' + r.text + '“', true); }
+  catch (e) { status(e.message, false); }
+  finally { k.disabled = false; beschaeftigt--; }
+};
+
+// ---- Laden / Holen
+async function lange(knopf, meldung, f) {
+  knopf.disabled = true; beschaeftigt++; meldung.textContent = '… läuft';
+  try { meldung.textContent = await f(); meldung.style.color = 'var(--gut)'; }
+  catch (e) { meldung.textContent = e.message; meldung.style.color = 'var(--schlecht)'; }
+  finally { knopf.disabled = false; beschaeftigt--; abfragen(); }
+}
+// ---- Editor: ein Quelltext-Fenster + Namen (Adresse=Name); Entwurf bleibt im Browser
+const ed = $('#quelle'), nm = $('#namen'), bl = $('#bilder');
+let progName = 'cp1', assembliert = null;
+try { ed.value = localStorage.getItem('cp1-quelle') || ''; nm.value = localStorage.getItem('cp1-namen') || '';
+      bl.value = localStorage.getItem('cp1-bilder') || ''; } catch (e) {}
+function merken() { try { localStorage.setItem('cp1-quelle', ed.value); localStorage.setItem('cp1-namen', nm.value);
+                          localStorage.setItem('cp1-bilder', bl.value); } catch (e) {} }
+ed.oninput = nm.oninput = bl.oninput = () => { assembliert = null; merken(); };
+function insEditor(listing, name) {
+  ed.value = listing.replace(/^\n+/, ''); progName = name; assembliert = null; merken();
+}
+async function assemble() {
+  const r = await api('/api/assemblieren', { quelltext: ed.value, namen: nm.value, bilder: bl.value });
+  const pos = ed.selectionStart;
+  ed.value = r.quelltext; nm.value = r.namen; ed.selectionStart = ed.selectionEnd = pos; merken();
+  assembliert = r;
+  return r;
+}
+$('#assemblieren').onclick = () => lange($('#assemblieren'), $('#ladenM'), async () => {
+  const r = await assemble();
+  const t = (r.teile || []).map(x => `Teil ${x.k} ${x.name} ${x.laenge} Zellen`).join(', ');
+  return `ok: ${t ? 'Kern' : 'Zellen'} 000–${drei(r.bis)}${t ? ' · Bereich ' + drei(r.bereich[0]) + '–' + drei(r.bereich[1]) + ' · ' + t : ''}, Zeilennummern und Namen aktualisiert`;
+});
+$('#ladenQ').onclick = () => lange($('#ladenQ'), $('#ladenM'), async () => {
+  const a = await assemble();
+  const zellen = Object.fromEntries(Object.entries(a.zellen).filter(([k]) => +k <= a.bis));
+  const sef = /^\s*(\d{1,3}:?\s+)?SEF\s+(?!255\b)/im.test(ed.value);
+  const projekt = +$('#fBank').value;                             // 6.00: SEF/FRD/FWR gelten für das Projekt im Feld
+  const r = await api('/api/laden', { zellen, projekt });
+  if ((a.teile || []).length) return `Kern in den CP1 geladen (Zellen ${drei(r.von)}–${drei(r.bis)}); die Teile holt LADE aus dem Flash: erst „Editor speichern“`;
+  return `in den CP1 geladen: Zellen ${drei(r.von)}–${drei(r.bis)}` +
+    (r.projekt_bank ? ` · gehört zu Projekt ${zwei(projekt)}` + (sef ? ' (SEF zeigt seine Bilder)' : '') : '');
+});
+function herunterladen(text, endung, typ) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: typ }));
+  a.download = progName + endung; a.click();
+}
+$('#alsKoa').onclick = () => herunterladen(ed.value.replace(/\s*$/, '\n') +
+  (nm.value.trim() ? '\n// Namen\n' + nm.value.trim().split('\n').map(z => '// ' + z).join('\n') + '\n' : '') +
+  (bl.value.trim() ? '\n// Bilder\n' + bl.value.replace(/\s+$/, '').split('\n').filter(z => z.trim()).map(z => '// @' + z.trim().replace(/^@/, '') ).join('\n') + '\n' : ''),
+  '.koa', 'text/plain');
+$('#alsJson').onclick = () => lange($('#alsJson'), $('#ladenM'), async () => {
+  const a = await assemble();
+  herunterladen(JSON.stringify(a.zellen), '.json', 'application/json');
+  return `${progName}.json gesichert`;
+});
+$('#datei').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  e.target.value = '';
+  lange($('#holenAlles'), $('#ladenM'), async () => {
+    const text = await f.text(), name = f.name.replace(/\.[^.]*$/, '');
+    if (/\.json$/i.test(f.name)) {
+      const r = await api('/api/disasm', { zellen: JSON.parse(text), namen: nm.value, bilder: bl.value });
+      insEditor(r.listing, name);
+    } else {
+      const namen = [...text.matchAll(/^\/\/ (\d{1,3}=\w+)\s*$/gm)].map(m => m[1]);   // von „Als .koa sichern“
+      if (namen.length) nm.value = namen.join('\n') + '\n';
+      const bilder = [...text.matchAll(/^\/\/ @(\w+=.*)$/gm)].map(m => m[1]);
+      if (bilder.length) bl.value = bilder.join('\n') + '\n';
+      insEditor(text.replace(/\n*\/\/ Bilder\n(\/\/ @.*\n?)*\s*$/, '\n').replace(/\n*\/\/ Namen\n(\/\/ \d{1,3}=\w+\s*\n?)*\s*$/, '\n'), name);
+    }
+    return `${f.name} geöffnet`;
+  });
+};
+function holen(knopf, obj) {
+  lange(knopf, $('#ladenM'), async () => {
+    const r = await api('/api/speichern', { ...obj, namen: nm.value, bilder: bl.value });
+    const k = Object.keys(r.zellen).sort((a, b) => a - b);
+    insEditor(r.listing, 'cp1-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-'));
+    return `aus dem CP1 geholt: Zellen ${k[0]}–${k[k.length - 1]}`;
+  });
+}
+$('#holenAlles').onclick = () => holen($('#holenAlles'), {});
+$('#holenTeil').onclick = () => holen($('#holenTeil'), { von: +$('#von').value, bis: +$('#bis').value });
+// ---- Flash (6.00: Projekte)
+const drei = n => String(n).padStart(3, '0');
+const zwei = n => String(n).padStart(2, '0');
+let verzeichnis = null;
+function zeigeVerz(v) {
+  verzeichnis = v;
+  const tb = $('#verz tbody'); tb.textContent = '';
+  for (const e of v.projekte) {
+    const tr = document.createElement('tr');
+    const auto = v.autoboot === e.nr;
+    tr.innerHTML = `<td>${zwei(e.nr)}${auto ? ' <span class="stern" title="Autoboot">★</span>' : ''}</td><td></td>` +
+      `<td class="start">${drei(e.bank)}${e.res > 1 ? '–' + drei(e.bank + e.res - 1) : ''}</td><td class="knopf"><button class="b" data-a="laden">Laden</button> ` +
+      `<button class="b zweit" data-a="sichern" title="Erste Bank des Projekts direkt aus dem Flash in den Editor holen (RAM bleibt)">In Editor</button> ` +
+      `<button class="b zweit" data-a="auto"${auto ? ' disabled' : ''}>Autoboot</button> ` +
+      `<button class="b zweit" data-a="weg" title="Projekt aus dem Verzeichnis nehmen (~10 s)">Löschen</button></td>`;
+    tr.children[1].textContent = e.name || '–';
+    tr.querySelector('[data-a=laden]').onclick = ev => flashTat(ev.target, '/api/flash/laden', { projekt: e.nr },
+      `Projekt ${zwei(e.nr)} geladen · RUN startet`, false);
+    tr.querySelector('[data-a=sichern]').onclick = ev => lange(ev.target, $('#flashM'), async () => {
+      const r = await api('/api/projekt/editor', { projekt: e.nr, namen: '' });   // nur die Namen dieser Bank
+      nm.value = r.namen_aus_bank ? r.namen : '';
+      bl.value = r.bilder || '';
+      insEditor(r.listing, `projekt${zwei(e.nr)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
+      $('#fBank').value = e.nr; $('#fBank').dataset.angefasst = 1; $('#fName').value = (r.name || '').trim();
+      $('#fStart').value = ''; $('#fAnz').value = r.anzeige || ''; anzVorschau();
+      return `Projekt ${zwei(e.nr)}${r.name ? ' „' + r.name.trim() + '“' : ''} im Editor (Start ${drei(r.start)}, RAM unberührt)`;
+    });
+    tr.querySelector('[data-a=auto]').onclick = ev => flashTat(ev.target, '/api/flash/autoboot', { projekt: e.nr },
+      `Autoboot: Projekt ${zwei(e.nr)}`, true);
+    tr.querySelector('[data-a=weg]').onclick = ev => {
+      if (!confirm(`Projekt ${zwei(e.nr)}${e.name ? ' „' + e.name + '“' : ''} löschen? (Die Bänke werden bei Bedarf neu vergeben.)`)) return;
+      flashTat(ev.target, '/api/projekt/loeschen', { projekt: e.nr }, `Projekt ${zwei(e.nr)} gelöscht`, true);
+    };
+    tb.appendChild(tr);
+  }
+  $('#verz').hidden = !v.projekte.length;
+  $('#autoInfo').textContent = !v.vorhanden ? 'noch kein Verzeichnis (entsteht beim ersten Speichern)'
+    : v.projekte.length ? (v.autoboot ? `Autoboot: Projekt ${zwei(v.autoboot)}` : 'Autoboot aus') : 'keine Projekte';
+  $('#autoAus').hidden = !v.autoboot;
+  const frei = [...Array(99).keys()].map(i => i + 1).find(n => !v.projekte.some(e => e.nr === n));
+  if (frei && !$('#fBank').dataset.angefasst) $('#fBank').value = frei;
+}
+function flashTat(knopf, pfad, obj, text, neuLesen) {
+  lange(knopf, $('#flashM'), async () => {
+    await api(pfad, obj);
+    if (neuLesen) zeigeVerz(await api('/api/flash'));
+    return text;
+  });
+}
+$('#fBank').oninput = () => { $('#fBank').dataset.angefasst = 1; };
+$('#fAnz').oninput = $('#fName').oninput = anzVorschau;
+$('#verzLesen').onclick = () => lange($('#verzLesen'), $('#flashM'), async () => {
+  const v = await api('/api/flash'); zeigeVerz(v);
+  return `${v.projekte.length} Projekt${v.projekte.length === 1 ? '' : 'e'}`;
+});
+$('#autoAus').onclick = () => flashTat($('#autoAus'), '/api/flash/autoboot', { projekt: 0 }, 'Autoboot aus', true);
+$('#fSpeichern').onclick = () => {
+  const projekt = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
+  if (!(projekt >= 1 && projekt <= 99)) { $('#flashM').textContent = 'Projekt 1..99'; return; }
+  if (verzeichnis?.projekte.some(e => e.nr === projekt) && !confirm(`Projekt ${zwei(projekt)} überschreiben?`)) return;
+  flashTat($('#fSpeichern'), '/api/flash/speichern', { projekt, name, start: start === '' ? null : +start },
+    `RAM in Projekt ${zwei(projekt)} gespeichert`, true);
+};
+$('#fEditor').onclick = () => {
+  const projekt = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
+  if (!(projekt >= 1 && projekt <= 99)) { $('#flashM').textContent = 'Projekt 1..99'; return; }
+  const da = verzeichnis?.projekte.find(x => x.nr === projekt);
+  if (da && !confirm(`Projekt ${zwei(projekt)}${da.name ? ' „' + da.name + '“' : ''} mit dem Editor-Programm überschreiben?`)) return;
+  lange($('#fEditor'), $('#flashM'), async () => {
+    const a = await assemble();
+    const st = start !== '' ? +start : null;                         // leer: bestehender Start bleibt, neues Projekt 0
+    const r = await api('/api/projekt/editor_speichern', { projekt, zellen: a.zellen, quelltext: ed.value, name: name || null, start: st, namen: a.namen, anzeige: $('#fAnz').value, bilder: bl.value });
+    zeigeVerz(await api('/api/flash'));
+    const n = a.namen.trim() ? a.namen.trim().split('\n').length : 0;
+    const nb = a.bilder.trim() ? a.bilder.trim().split('\n').length : 0;
+    if (r.baenke > 1) return `Overlay-Paket -> Projekt ${zwei(projekt)}: Kern + ${r.baenke - 1} Teil${r.baenke > 2 ? 'e' : ''} ab Bank ${drei(r.bank)} (RAM unberührt)`;
+    return `Editor -> Projekt ${zwei(projekt)}, Bank ${drei(r.bank)} (alle 256 Zellen${n ? ', ' + n + ' Namen' : ''}${nb ? ', ' + nb + ' Bilder' : ''}, RAM unberührt)`;
+  });
+};
+
+// ---- Zellen per NIE
+let zTimer = null;
+async function zellenLesen(still) {
+  const von = Math.max(0, Math.min(255, +$('#zVon').value || 0));
+  const anz = Math.max(1, Math.min(32, +$('#zAnz').value || 1, 256 - von));
+  const r = await api('/api/zellen', { von, anzahl: anz });
+  const tb = $('#zTab tbody');
+  if (still && tb.dataset.von == von && tb.children.length === anz) {      // mitlaufen: nur Werte, nicht gerade bearbeitete Felder
+    for (const tr of tb.children) {
+      const v = r.zellen[tr.dataset.z];
+      tr.querySelectorAll('input').forEach((i, k) => { if (document.activeElement !== i && !i.dataset.neu) i.value = v[k]; });
+    }
+    return;
+  }
+  tb.textContent = ''; tb.dataset.von = von;
+  for (const [n, [bef, arg]] of Object.entries(r.zellen).sort((a, b) => a[0] - b[0])) {
+    const tr = document.createElement('tr'); tr.dataset.z = n;
+    tr.innerHTML = `<td>${n}</td><td><input type="number" min="0" max="255" aria-label="Befehl"></td>` +
+      `<td><input type="number" min="0" max="255" aria-label="Argument"></td><td class="knopf"><button class="b zweit" disabled>Schreiben</button></td>`;
+    const [ib, ia] = tr.querySelectorAll('input'), k = tr.querySelector('button');
+    ib.value = bef; ia.value = arg;
+    [ib, ia].forEach(i => i.oninput = () => { i.dataset.neu = 1; i.parentNode.classList.add('geaendert'); k.disabled = false; });
+    k.onclick = () => lange(k, $('#zM'), async () => {
+      const befehl = +ib.value, argument = +ia.value;
+      if (![befehl, argument].every(x => Number.isInteger(x) && x >= 0 && x <= 255)) throw new Error('Werte 0..255');
+      await api('/api/zelle', { zelle: +n, befehl, argument });
+      [ib, ia].forEach(i => { delete i.dataset.neu; i.parentNode.classList.remove('geaendert'); });
+      setTimeout(() => { k.disabled = true; });
+      return `Zelle ${n} = ${String(befehl).padStart(2, '0')}.${drei(argument)}`;
+    });
+    tb.appendChild(tr);
+  }
+  $('#zTab').hidden = false;
+}
+$('#zLesen').onclick = () => lange($('#zLesen'), $('#zM'), async () => { await zellenLesen(false); return ''; });
+$('#zLive').onchange = () => {
+  clearInterval(zTimer); zTimer = null;
+  if ($('#zLive').checked) zTimer = setInterval(() => { if (!beschaeftigt) zellenLesen(true).catch(e => { $('#zM').textContent = e.message; }); }, 1500);
+};
+</script>
+</body>
+</html>

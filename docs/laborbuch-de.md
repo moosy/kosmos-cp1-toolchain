@@ -109,10 +109,46 @@ den Charakter des Geräts zu verlieren.
 - Michael nach dem Spielen: „das macht so viel Spaß, Schwierigkeitsgrad genau richtig“.
 - Später vielleicht: Overlays (Spielteile per FRD nachladen), „eigene Bank + n“.
 
+## 2026-11-16 – Plan 28C256 (Firmware 6.x)
+
+- 5.07 hatte noch 55 Byte frei. Michael gibt Port 1 ganz für interne Zwecke frei. Damit gehen A13 an P1.5 (Klemme 6) und
+  A14 an SCK des Flash (P1.1, SPI Mode 3, ruht high), und der AT28C256 hat 32 KB statt 8 KB.
+- Seine Aufteilung: Die acht unteren 2-KB-Blöcke bleiben gleich (Original, Interrupt), die acht oberen sind frei
+  für eigenen Code, also 18 KB statt 6 KB. Er benennt die Blöcke nach A11 A12 A13 A14 mit dem LSB zuerst: 1111 Bedienung,
+  1011 Treiber, 1101 Befehle, 1001 Aufträge, 1010 Spiegel von 1011.
+- Verworfen: ein dritter 8155 mit RAM-Umschaltung. Mehr Platz kommt stattdessen über Overlays aus dem Flash (Befehl JOV).
+- Neues Flash-Verzeichnis: 99 Projekte statt 256 Bänken. Jedes Projekt bekommt 4 Bänke, Programme sprechen nur ihre
+  eigenen Bänke an (`PSK k` relativ). 5.08 bleibt die letzte Firmware für den alten Chip.
+- Versionsschema ab 6.00 (Michael): M.mf, also Architektur . Benutzerwirkung Fehlerbehebung.
+
+## 2026-11-17 – 6.00, 6.10, 6.20 im Simulator
+
+- **6.00:** Die Hälften wurden auf vier Blöcke verteilt. Dazu kommen die gemeinsame Sprungtabelle (`zu_X`), Fernaufrufe 1001 → 1011
+  (`fa_X`) und das Verzeichnis mit `Pro`/`LdP`/`5to`/`bot`. `build6.py` braucht keinen Lückenfüller mehr.
+- **Stapel (Lehre):** Der Timer-Interrupt braucht selbst 3 der 8 Ebenen, schon 5.x lag bei 7 von 8, und ein Fernaufruf kostet
+  eine Ebene mehr. `build6.py` prüft jetzt jeden Pfad statisch und bricht über 7 von 8 ab. Der Simulator prüft
+  die Stellen ohne Interrupt bei jedem Befehl. Treiber-Routinen bleiben deshalb flach.
+- **6.10: JOV** (`PSK k / PSK n / JOV z`) und Overlay-Pakete im Pi-Assembler (`.bereich`, `>>kern`, `>>teil`, `LADE`).
+- **6.20: ZUF n**, auf Michaels Wunsch ohne zusätzliche Takte im Tasteninterrupt. Bei jedem ZUF wird nur das Timer-Register
+  eingemischt, weil ZUF ohnehin abhängig von Tastendrücken aufgerufen wird. Der Zustand liegt in der letzten RAM-Zelle (Michaels Idee).
+  Xorshift 7/9/8 mit 16 Bit, Periode 65535. Gleichverteilung im Simulator geprüft (Chi² bei ZUF 6 und ZUF 10).
+- **Fehler von mir:** ZUF 2 sah zuerst schief aus. Schuld war mein Test, dessen Zähler je Wert über 255 lief (bei OVF 0
+  still modulo 256), nicht ZUF.
+- **Minenflug mit Würfelrettung** (Michaels Idee): Nach jedem Absturz hüpft ein o über die Anzeige, eine Taste stoppt es,
+  dreimal würfeln, ab 12 Augen erscheint „PhEU“ und Leben und Punkte bleiben, sonst „LoSt“. Das Spiel ist ein Overlay-Paket mit Kern, Spielschleife
+  und Würfelteil. Dafür musste der Assembler `LADE` auch innerhalb von Teilen auflösen. Getestet nur im Simulator.
+  Fehler in meinen Testskripten: „LoSt“ enthält ein o und galt als Würfel, und Segmentmuster wurden falsch zurückgelesen.
+- **Doku:** Schnellübersicht 6.20, `docs/firmware6-de.md`, die Routinenliste aus den Quellen (`routinen.py`). Die Angabe
+  „4 MHz“ in der alten Doku war falsch, richtig sind 6 MHz bei ALE 400 kHz (von Michael gemessen).
+- **Bekannte Lücke:** INP nimmt nur Befehle bis 47 an, JOV und ZUF kommen nur über den Pi ins RAM.
+
 ## Chips und Stände
 
 | Firmware | SHA-256 (Anfang) | Wo |
 |---|---|---|
+| 6.20 | 9bd7de80 | Simulator, wartet auf 28C256 |
+| 6.10 | 1c65d5c9 | Simulator |
+| 6.00 | f0c70050 | Simulator |
 | 5.07 | bd35a143 | im CP1 (seit 2026-11-15) |
 | 5.06 | 7bc4d312 | Rückfall |
 | 5.05 | 3e404bb0 | – |
@@ -123,9 +159,9 @@ den Charakter des Geräts zu verlieren.
 ## Arbeitsregeln, die sich bewährt haben
 
 - Große Vorhaben: erst Plan mit Michael, er sagt „go“.
-- Firmware nur nach Simulator-Tests (`v5/alle_tests.sh`) brennen lassen; Pi-Software erst mit passender Firmware aktivieren.
+- Firmware nur nach Simulator-Tests (`v5/alle_tests.sh`, ab 6.x `v6/alle_tests.sh`) brennen lassen; Pi-Software erst mit passender Firmware aktivieren.
 - Nichts fernsteuern, während Michael spielt oder tippt.
 - Pi-Pins immer als Pin und BCM nennen.
 
 ---
-*Geschrieben von Claude (KI), 2026-11-15.*
+*Geschrieben von Claude (KI), 2026-11-15, fortgeschrieben 2026-11-17.*

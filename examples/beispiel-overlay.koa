@@ -1,0 +1,25 @@
+// Overlay-Probe: Kern zählt, Teile setzen Startwerte
+.bereich 128-255
+>>kern
+>start:
+LADE eins
+>zurueck:
+LDA wert
+ADD #1
+ABS wert
+LADE zwei
+>ende:
+HLT
+>wert:
+# 0
+>>teil 1 eins
+>los:
+AKO 10
+ABS wert
+SPU zurueck
+>>teil 2 zwei
+>los:
+LDA wert
+ADD #100
+ABS wert
+SPU ende

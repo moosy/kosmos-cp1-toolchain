@@ -27,7 +27,7 @@ Contents:
 
 | Part | Function |
 |---|---|
-| M5L8049 / 8049 (4 MHz, 15 clocks per cycle = 3.75 µs) | CPU, runs from external EEPROM (EA high) |
+| M5L8049 / 8049 (6 MHz, 15 clocks per cycle = 2.5 µs, ALE 400 kHz) | CPU, runs from external EEPROM (EA high) |
 | 8155 internal | 128 cells of CP1 memory (2 bytes each), keyboard, display |
 | 8155 on the CP3 memory expansion (optional) | cells 128–255 |
 | AT28C64B (8 KB) | firmware, two 4 KB halves selected by A12 = **P1.4** |
@@ -218,7 +218,7 @@ D  ===X====== stable ===========X====
 - **CP1 sends:** the CP1 sets D while it holds T and then releases T; the Pi reads D *after* T has
   gone high again.
 - Bytes are LSB first.
-- The CP1 polls T in a loop of 22.5 µs and may need up to ~45 µs to grab it, so the Pi uses
+- The CP1 polls T in a loop of 6 cycles = 15 µs and, with the instructions around it, may need up to ~30 µs to grab it, so the Pi uses
   **T low ≥ 80 µs and T high ≥ 100 µs** (5.04; 40/40 µs failed on long transfers). Longer is always
   fine – the protocol is not time critical on either side, the CP1 gives up after ~200 ms per bit.
 - While the CP1 holds T (erasing a 4 KB flash sector, copying), the Pi must simply wait (up to
