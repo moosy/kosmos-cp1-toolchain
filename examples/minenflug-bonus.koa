@@ -1,0 +1,759 @@
+// Minenflug mit Würfelrettung und Bonusrunde (ab Firmware 6.20: ZUF, JOV)
+// Overlay-Paket mit fünf Teilen im selben Bereich. Der Kern bleibt im Speicher: Spielzustand (220..), LEDs,
+// zeichne und punkt (von mehreren Teilen gebraucht).
+//   Teil 1 spiel     normales Spiel; alle 16 Minen wird eine Bonusrunde fällig
+//   Teil 2 bonus     Bonusrunde: das Raumschiff ist ein Strich (oben/Mitte/unten), statt Linien fliegen 8 o
+//   Teil 3 anim      Übergang: modus 0 = zum Bonus (o fährt auf Stelle 4, blinkt, wird Strich), 1 = zurück
+//   Teil 4 wuerfel   drei Würfe, ein Relais tickt bei jedem Hüpfer
+//   Teil 5 ergebnis  modus 0 = Boom (Relais rattern, dann Würfel laden), 1 = Summe, PhEU oder LoSt, ENDE
+// Tricks:
+//   - zeichne nimmt Raumschiff und Geschoss über zwei Zeiger (spt, gpt). Im Bonus sind sie vertauscht: das
+//     Raumschiff kommt aus der Strich-Tabelle gtab (_ - ‾), das Geschoss aus der o-Tabelle tab.
+//   - modus wählt den Einsprung eines Teils (ein Teil beginnt nach LADE immer vorn). Normal ist modus = 0.
+//   - Daten in einem Teil kommen bei jedem Laden frisch aus dem Flash: keine Aufräumarbeit nötig.
+//   - Ein Geschoss außerhalb der Anzeige (spos 6 bzw. 255) malt harmlos in tmp (d0 + 6) bzw. cnt (d0 - 1).
+//   - LADE nur auf oberster Ebene, nie aus einem Unterprogramm im Bereich: pruef merkt sich den Bonus (bz),
+//     geladen wird oben in der Spielschleife.
+.bereich 090-219
+>>kern
+      OVF 0
+      SEF titel
+      TST
+>neu:
+// Startwerte (leben … bz) aus der eigenen Bank neu laden
+      PSK 0
+      PSK leben
+      PSK 19
+      FRD leben
+      JSR leds
+// normales Spiel: Raumschiff = o, Geschoss = Linie
+>normal:
+      AKO tab
+      ABS spt
+      AKO gtab
+      ABS gpt
+      LADE spiel
+>leds:
+      AKO bar
+      ADD pkt
+      ABS zq
+      LIA zq
+      P2A 0
+      AKO bar
+      ADD leben
+      ABS zq
+      LIA zq
+      P4A 0
+      RET
+// Absturz (aus pruef, also aus einem Unterprogramm): Rücksprung verwerfen, Boom im Ergebnisteil (modus 0)
+>crash:
+      SEF explo
+      POP
+      LADE ergebnis
+// Raumschiff (spt + sy) und Geschoss (gpt + srow) in die Minenzellen d0..d5 odern, anzeigen, wieder löschen
+>zeichne:
+      LDA spt
+      ADD sy
+      ABS zq
+      LIA zq
+      ABS tmp
+      AKO d0
+      ADD sx
+      ABS zp
+      LIA zp
+      ODR tmp
+      AIS zp
+      LDA gpt
+      ADD srow
+      ABS zq
+      LIA zq
+      ABS tmp
+      AKO d0
+      ADD spos
+      ABS zq
+      LIA zq
+      ODR tmp
+      AIS zq
+      SEG d0
+      LIA zp
+      UND #128
+      AIS zp
+      LIA zq
+      UND #128
+      AIS zq
+>snix:
+      RET
+// Punkt: total + 1, pkt + 1; bei 8 Extraleben (höchstens 8) und schneller
+>punkt:
+      LDA total
+      ADD #1
+      ABS total
+      LDA pkt
+      ADD #1
+      ABS pkt
+      VGL #8
+      SPB extra
+      SPU leds
+>extra:
+      AKO 0
+      ABS pkt
+      LDA leben
+      VGL #8
+      SPB schneller
+      ADD #1
+      ABS leben
+>schneller:
+      LDA tempo
+      VKL #12
+      SPB leds
+      SUB #3
+      ABS tempo
+      SPU leds
+>spt:
+      # 0
+>gpt:
+      # 0
+>zq:
+      # 0
+// die drei Würfe (Augen), vom Würfel- an den Ergebnisteil
+>w1:
+      # 0
+>w2:
+      # 0
+>w3:
+      # 0
+
+// Daten: tab + 4 = 243, gtab + 2 = 242, gtab + 4 = 244, bar + 8 = 253 = 0
+>leben:
+220   # 3
+>pkt:
+      # 0
+>total:
+      # 0
+>nmin:
+      # 0
+>sx:
+      # 0
+>sy:
+      # 0
+>spos:
+      # 6
+>sdir:
+      # 0
+>srow:
+      # 0
+>cnt:
+      # 0
+>d0:
+      # 0
+>d1:
+      # 0
+>d2:
+      # 0
+>d3:
+      # 0
+>d4:
+      # 0
+>d5:
+      # 0
+>tmp:
+      # 0
+>tempo:
+      # 34
+>bz:
+      # 0
+>tab:
+      # 92
+>gtab:
+      # 8
+>zp:
+      # 0
+      # 64
+      # 99
+      # 1
+>bar:
+      # 255
+      # 254
+      # 252
+      # 248
+      # 240
+      # 224
+      # 192
+      # 128
+>modus:
+254   # 0
+// 253: 0 (bar + 8), 255: Zustand für ZUF
+
+>>teil 1 spiel
+// Bonus fällig (bz > 15) und keine Linie mehr unterwegs: zur Animation
+>loop:
+      LDA bz
+      VGR #15
+      SPB lbon
+>loop2:
+      JSR zeichne
+      LDA tempo
+      ABS cnt
+>warte:
+      TSE
+      VGL #4
+      SPB links
+      VGL #6
+      SPB rechts
+      VGL #8
+      SPB hoch
+      VGL #2
+      SPB runter
+>wweiter:
+      LDA cnt
+      SUB #1
+      ABS cnt
+      VGL #0
+      SPB tick
+      SPU warte
+>links:
+      LDA sx
+      VGL #0
+      SPB wweiter
+      SUB #1
+      ABS sx
+      SPU bewegt
+>rechts:
+      LDA sx
+      VGL #5
+      SPB wweiter
+      ADD #1
+      ABS sx
+      SPU bewegt
+>hoch:
+      AKO 4
+      ABS sy
+      SPU bewegt
+>runter:
+      AKO 0
+      ABS sy
+>bewegt:
+      JSR pruef
+      JSR zeichne
+      SPU wweiter
+>tick:
+      LDA spos
+      VGR #5
+      SPB spawn
+      ADD sdir
+      ABS spos
+      SPU minen
+// neue Linie (nicht, solange der Bonus fällig ist)
+>spawn:
+      LDA bz
+      VGR #15
+      SPB minen
+      ZUF 0
+      VGR #70
+      SPB minen
+      UND #4
+      ABS srow
+      AKO 255
+      ABS sdir
+      AKO 5
+      ABS spos
+      LDA sx
+      VKL #3
+      SPB minen
+      AKO 1
+      ABS sdir
+      AKO 0
+      ABS spos
+>minen:
+      LDA nmin
+      VGL #3
+      SPB fertig
+      ZUF 16
+      VGR #5
+      SPB fertig
+      VGL sx
+      SPB fertig
+      ADD #d0
+      ABS zp
+      LIA zp
+      VGR #0
+      SPB fertig
+      AKO 128
+      AIS zp
+      LDA nmin
+      ADD #1
+      ABS nmin
+>fertig:
+      JSR pruef
+      SPU loop
+>pruef:
+      LDA spos
+      VGL sx
+      SPB pr2
+// Mine einsammeln: nur ganz unten
+>sammeln:
+      LDA sy
+      VGR #0
+      SPB snix
+      AKO d0
+      ADD sx
+      ABS zp
+      LIA zp
+      VGL #0
+      SPB snix
+      AKO 0
+      AIS zp
+      LDA nmin
+      SUB #1
+      ABS nmin
+      LDA bz
+      ADD #1
+      ABS bz
+      SPU punkt
+>pr2:
+      LDA srow
+      VGL sy
+      SPB crash
+      SPU sammeln
+>lbon:
+      LDA spos
+      VGR #5
+      SPB lb2
+      SPU loop2
+>lb2:
+      AKO 0
+      ABS bz
+      LADE anim
+
+>>teil 2 bonus
+// Strich in drei Höhen (sy 0/2/4), 8 o von rechts, Minen wie sonst; Ende, wenn alles leer ist
+>bloop:
+      JSR zeichne
+      LDA tempo
+      ABS cnt
+>bwarte:
+      TSE
+      VGL #4
+      SPB blinks
+      VGL #6
+      SPB brechts
+      VGL #8
+      SPB bhoch
+      VGL #2
+      SPB brunter
+>bweiter:
+      LDA cnt
+      SUB #1
+      ABS cnt
+      VGL #0
+      SPB btick
+      SPU bwarte
+>blinks:
+      LDA sx
+      VGL #0
+      SPB bweiter
+      SUB #1
+      ABS sx
+      SPU bbew
+>brechts:
+      LDA sx
+      VGL #5
+      SPB bweiter
+      ADD #1
+      ABS sx
+      SPU bbew
+>bhoch:
+      LDA sy
+      VGL #4
+      SPB bweiter
+      ADD #2
+      ABS sy
+      SPU bbew
+>brunter:
+      LDA sy
+      VGL #0
+      SPB bweiter
+      SUB #2
+      ABS sy
+>bbew:
+      JSR bpruef
+      JSR zeichne
+      SPU bweiter
+>btick:
+      LDA spos
+      VGR #5
+      SPB bneu
+      ADD sdir
+      ABS spos
+      SPU bminen
+// nächstes o, solange noch welche übrig sind
+>bneu:
+      LDA bo
+      VGL #0
+      SPB bleer
+      SUB #1
+      ABS bo
+      ZUF 0
+      UND #4
+      ABS srow
+      AKO 255
+      ABS sdir
+      AKO 5
+      ABS spos
+>bminen:
+      LDA bo
+      VGL #0
+      SPB bfertig
+      LDA nmin
+      VGL #3
+      SPB bfertig
+      ZUF 16
+      VGR #5
+      SPB bfertig
+      VGL sx
+      SPB bfertig
+      ADD #d0
+      ABS zp
+      LIA zp
+      VGR #0
+      SPB bfertig
+      AKO 128
+      AIS zp
+      LDA nmin
+      ADD #1
+      ABS nmin
+>bfertig:
+      JSR bpruef
+      SPU bloop
+// keine o mehr: wenn auch keine Mine mehr liegt, zurück
+>bleer:
+      LDA nmin
+      VGL #0
+      SPB bende
+      SPU bfertig
+>bende:
+      AKO 1
+      ABS modus
+      LADE anim
+>bpruef:
+      LDA sy
+      VGR #0
+      SPB bfang
+      AKO d0
+      ADD sx
+      ABS zp
+      LIA zp
+      VGL #0
+      SPB bfang
+      AKO 0
+      AIS zp
+      LDA nmin
+      SUB #1
+      ABS nmin
+      JSR punkt
+// o fangen: Strich in der Mitte oder auf der Höhe des o
+>bfang:
+      LDA spos
+      VGL sx
+      SPB bf2
+      RET
+>bf2:
+      LDA sy
+      VGL #2
+      SPB btreff
+      VGL srow
+      SPB btreff
+      RET
+>btreff:
+      AKO 6
+      ABS spos
+      SPU punkt
+>bo:
+      # 8
+
+>>teil 3 anim
+      LDA modus
+      VGL #1
+      SPB ablink
+// zum Bonus: o auf Stelle 4 (sx = 3) fahren
+>ahin:
+      JSR zeichne
+      VZG 150
+      LDA sx
+      VGL #3
+      SPB ablink
+      VKL #3
+      SPB ahr
+      SUB #2
+>ahr:
+      ADD #1
+      ABS sx
+      SPU ahin
+// viermal blinken (aus/an)
+>ablink:
+      SEG d0
+      VZG 150
+      JSR zeichne
+      VZG 150
+      LDA azahl
+      SUB #1
+      ABS azahl
+      VGR #0
+      SPB ablink
+      LDA modus
+      VGL #1
+      SPB azur
+// Raumschiff wird Strich in der Mitte, Geschosse werden o
+      AKO 2
+      ABS sy
+      AKO gtab
+      ABS spt
+      AKO tab
+      ABS gpt
+      LADE bonus
+>azur:
+      AKO 0
+      ABS sy
+      ABS modus
+      ABS bz
+      SPU normal
+>azahl:
+      # 4
+
+>>teil 4 wuerfel
+// Drei Würfe. Ein o hüpft (oben/unten im Wechsel) hin und her, ein Relais tickt bei jedem Hüpfer. Eine
+// Zifferntaste bremst: noch 2..5 langsamere Sprünge, dann bleibt es als [4] liegen. Augen nach w1..w3.
+      AKO w1
+      ABS wq
+      AKO we0
+      ABS wp
+>wwurf:
+      TSE
+>whupf:
+      JSR wbild
+      VZG 70
+      LDA wx
+      VGL #0
+      SPB wtaste
+      VZG 120
+      LDA wx
+      SUB #1
+      ABS wx
+      VGL #0
+      SPB wland
+      SPU whupf
+>wtaste:
+      TSE
+      VGL #255
+      SPB whupf
+      ZUF 4
+      ADD #2
+      ABS wx
+      SPU whupf
+>wland:
+      ZUF 6
+      ADD #1
+      AIS wq
+      AS3 zp
+      LDA wq
+      ADD #1
+      ABS wq
+      AKO 0
+      AIS wp
+      LDA wp
+      VKL #we4
+      SPB wklammer
+      AKO we3
+      ABS wp
+>wklammer:
+      AKO 57
+      AIS wp
+      LDA wp
+      ADD #1
+      ABS wp
+      LDA zp
+      AIS wp
+      LDA wp
+      ADD #1
+      ABS wp
+      AKO 15
+      AIS wp
+      SEG we0
+      VZG 250
+      VZG 250
+      VZG 250
+      VZG 250
+>wleer:
+      AKO 0
+      AIS wp
+      LDA wp
+      VGL #we0
+      SPB wnaechst
+      SUB #1
+      ABS wp
+      SPU wleer
+>wnaechst:
+      LDA wq
+      VGL #w3
+      SPB wwurf
+      VKL #w3
+      SPB wwurf
+      AKO 1
+      ABS modus
+      LADE ergebnis
+// eine Stelle weiter (am Rand umkehren), o oben <-> unten, Relais (Bit 0) umschalten, anzeigen
+>wbild:
+      AKO 0
+      AIS wp
+      LDA wp
+      VGL #we5
+      SPB wlinks
+      VGL #we0
+      SPB wrechts
+      SPU wweiter
+>wlinks:
+      AKO 255
+      ABS wdir
+      SPU wweiter
+>wrechts:
+      AKO 1
+      ABS wdir
+>wweiter:
+      LDA wp
+      ADD wdir
+      ABS wp
+      LDA wo
+      NEG 63
+      ABS wo
+      AIS wp
+      UND #1
+      P2A 0
+      SEG we0
+      RET
+>wp:
+      # 0
+>wdir:
+      # 1
+>wo:
+      # 99
+>wx:
+      # 0
+>wq:
+      # 0
+>we0:
+      # 0
+>we1:
+      # 0
+>we2:
+      # 0
+>we3:
+      # 0
+>we4:
+      # 0
+>we5:
+      # 0
+
+>>teil 5 ergebnis
+      LDA modus
+      VGL #1
+      SPB eaus
+// Boom: Relais rattern, dann würfeln
+      AKO 3
+      JSR rassel
+      LADE wuerfel
+// Summe: „462 12“, dann PhEU oder LoSt
+>eaus:
+      AKO 0
+      ABS modus
+      LDA w1
+      AS3 r0
+      LDA w2
+      AS3 r1
+      LDA w3
+      AS3 r2
+      LDA w1
+      ADD w2
+      ADD w3
+      ABS es
+      AS2 r4
+      LDA es
+      AS3 r5
+      SEG r0
+      AKO 6
+      JSR ewarte
+      LDA es
+      VGR #11
+      SPB ephew
+      SEF lost
+      AKO 6
+      JSR ewarte
+      AKO 3
+      JSR rassel
+      AKO 0
+      ABS pkt
+      LDA leben
+      SUB #1
+      ABS leben
+      VGL #0
+      SPB eende
+>eweiter:
+      AKO 6
+      ABS spos
+      JSR leds
+      SPU normal
+>ephew:
+      SEF phew
+      AKO 6
+      JSR ewarte
+      SPU eweiter
+>eende:
+      JSR leds
+      SEF ende
+      TST
+      LDA total
+      ANZ
+      TST
+      SPU neu
+// Relais rattern: Akku x (alle an, alle aus)
+>rassel:
+      ABS etmp
+>ras1:
+      AKO 255
+      P2A 0
+      VZG 90
+      AKO 0
+      P2A 0
+      VZG 90
+      LDA etmp
+      SUB #1
+      ABS etmp
+      VGR #0
+      SPB ras1
+      RET
+// Akku x 250 ms warten
+>ewarte:
+      ABS etmp
+>ew1:
+      VZG 250
+      LDA etmp
+      SUB #1
+      ABS etmp
+      VGR #0
+      SPB ew1
+      RET
+>etmp:
+      # 0
+>es:
+      # 0
+>r0:
+      # 0
+>r1:
+      # 0
+>r2:
+      # 0
+>r3:
+      # 0
+>r4:
+      # 0
+>r5:
+      # 0

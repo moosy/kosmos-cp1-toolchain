@@ -444,6 +444,30 @@ class Leitung:
         while len(ks_) > 1 and ks_[-1]['roh'][0x11] != 0: ks_.pop()          # leere Bänke am Ende weglassen
         return projekt_aus_baenken(ks_, e, v['autoboot'] == nr, quelltext)
 
+    def projekt_editor(self, nr, namen_text_=''):
+        """Projekt nr für den Editor: erste Bank als Listing; ist es ein Overlay-Paket (LADE in Bank 0), der ganze
+        Paket-Quelltext aus allen Teilen (6.22+). -> dict für /api/projekt/editor"""
+        with self.lock:
+            e = self.projekt_bank(nr)
+            if e is None: raise FlashFehler(f'Projekt {nr} gibt es nicht')
+            k = self.bank_komplett(e['bank'])
+            teile = []
+            if e['res'] > 1 and _lade_stellen(k['zellen']):
+                for i in range(1, e['res']):
+                    ki = self.bank_komplett(e['bank'] + i)
+                    if ki['roh'][0x11] != 0: break                     # leer: dahinter kommt nichts mehr
+                    teile.append(ki)
+        namen = k['namen'] or namen_lesen(namen_text_)
+        an = k['anzeige'] or (bytes(e['anzeige']) if e['anzeige'] else None)
+        st = k['roh'][0x13]
+        q = paket_aus_baenken([k] + teile, e['name'] or '') if teile else None
+        return {'projekt': e['nr'], 'bank': e['bank'], 'name': e['name'] or k['name'], 'start': 0 if st == 0xFF else st,
+                'namen': '' if q else namen_text(namen), 'namen_aus_bank': bool(k['namen']) and not q,
+                'anzeige': text_aus_anzeige(an) if an else '', 'bilder': bilder_text(k['bilder']),
+                'zellen': {f'{a:03d}': list(v) for a, v in k['zellen'].items()},
+                'paket': bool(q), 'teile': 1 + len(teile) if q else 1,
+                'listing': q or disasm(k['zellen'], namen, k['bilder'])}
+
     def projekt_bank(self, nr):
         """-> Verzeichnis-Eintrag von Projekt nr oder None"""
         return next((e for e in self.verzeichnis()['projekte'] if e['nr'] == nr), None)
@@ -490,7 +514,8 @@ class Leitung:
                 namen = {int(a): n for a, n in b.get('labels', {}).items()}
                 bilder = [(x['name'], bytes(x['segmente'])) for x in b.get('bilder', [])]
                 an = bytes(b['anzeige']) if b.get('anzeige') else None
-                self.bank_einspielen(erste + k, z, name, int(p['start']) if k == 0 else None, namen, an, bilder)
+                bn = name if k == 0 else (b.get('name') or name)[:16]   # Teilbänke: eigener Name (Paket: Teilname)
+                self.bank_einspielen(erste + k, z, bn, int(p['start']) if k == 0 else None, namen, an, bilder)
             for k in range(n_b, res):                       # 6.22: reservierte, aber unbenutzte Bänke leeren
                 self.bank_leeren(erste + k)                 #   (sonst bleiben dort alte Inhalte stehen)
             an0 = p['baenke'][0].get('anzeige')
@@ -548,6 +573,8 @@ def projekt_aus_baenken(ks_, e, autoboot=False, quelltext=None, firmware=None):
          'herkunft': {'gesichert': time.strftime('%Y-%m-%d %H:%M'), 'projekt': e['nr'],
                       'aus_baenken': [e['bank'] + i for i in range(len(ks_))], 'reserviert': e['res']}}
     if e.get('anzeige') and not p['baenke'][0]['anzeige']: p['baenke'][0]['anzeige'] = list(e['anzeige'])
+    for b, k in zip(p['baenke'][1:], ks_[1:]):              # eigener Bankname (Paket: Teilname), sonst wie das Projekt
+        if (k['name'] or '').strip() and k['name'].strip() != p['name']: b['name'] = k['name'].strip()
     if firmware: p['herkunft']['firmware'] = firmware
     if quelltext: p['quelltext'] = quelltext
     return p
@@ -1045,6 +1072,7 @@ def paket_projekt(quelltext, name, start=0, namen_alt='', bilder_text_='', anzei
     r = paket_assemblieren(quelltext, namen_alt, bilder_text_) if ist_paket(quelltext) else \
         dict(assemblieren(quelltext, namen_alt, bilder_text_), baenke=None)
     baenke = r['baenke'] or [{'zellen': r['zellen'], 'namen': r['namen']}]
+    teilname = {t['k']: t['name'] for t in (r.get('teile') or [])}
     p = {'format': PROJEKT_FORMAT, 'version': PROJEKT_VERSION, 'name': name, 'start': start, 'autoboot': False,
          'baenke': [], 'quelltext': r['quelltext'],
          'herkunft': {'gesichert': time.strftime('%Y-%m-%d %H:%M'), 'assembliert': True}}
@@ -1053,7 +1081,68 @@ def paket_projekt(quelltext, name, start=0, namen_alt='', bilder_text_='', anzei
                             'labels': {f'{a:03d}': n for a, n in sorted(b['namen'].items())},
                             'bilder': [{'name': n, 'segmente': list(x)} for n, x in r['bilder']] if i == 0 else [],
                             'anzeige': list(anzeige) if anzeige and i == 0 else None})
+        if i in teilname: p['baenke'][-1]['name'] = teilname[i]
     return p
+
+
+# ------------------------------------------------ Paket aus dem Flash zurückholen (Umkehrung von paket_projekt)
+def _lade_stellen(zellen, von=0, bis=255):
+    """-> [(adresse, k, n, z)] für jede Folge PSK k / PSK n / JOV z (so steht LADE im Speicher)"""
+    c = lambda i: tuple(zellen.get(i, (0, 0)))
+    return [(i, c(i)[1], c(i + 1)[1], c(i + 2)[1]) for i in range(von, bis - 1)
+            if c(i)[0] == 36 and c(i + 1)[0] == 36 and c(i + 2)[0] == 48]
+
+
+def _lade_einsetzen(listing, zellen, von, bis, anfang, laenge, teilname):
+    """im Listing jede Dreiergruppe PSK k / PSK n / JOV anfang (n = Länge von Teil k) wieder durch LADE name ersetzen"""
+    zeilen, adr, zeile_von, marken = listing.split('\n'), von, {}, set()
+    for i, z in enumerate(zeilen):
+        m = re.match(r'^>([^\s:]+):\s+(\d+)\s*$', z)
+        if m: adr = int(m.group(2)); marken.add(adr); continue
+        m = re.match(r'^  (\d{3}) \S', z)
+        if m: adr = int(m.group(1))
+        elif not re.match(r'^      \S', z): continue
+        zeile_von[adr] = i; adr += 1
+    weg = set()
+    for a, k, n, z in _lade_stellen(zellen, von, bis):
+        if z != anfang or k not in teilname or laenge.get(k) != (n or 256): continue
+        i = zeile_von.get(a)
+        if i is None or zeile_von.get(a + 1) != i + 1 or zeile_von.get(a + 2) != i + 2 or {a + 1, a + 2} & marken: continue
+        zeilen[i] = zeilen[i][:6] + f'LADE {teilname[k]}'
+        weg |= {i + 1, i + 2}
+    return '\n'.join(z for i, z in enumerate(zeilen) if i not in weg)
+
+
+def paket_aus_baenken(baenke, projektname=''):
+    """Bänke eines Projekts (je {'zellen': {n: (b, a)}, 'namen', 'bilder', 'name'}, Bank 0 zuerst) -> Quelltext eines
+    Overlay-Pakets (.bereich, >>kern, >>teil k name, LADE name), oder None, wenn Bank 0 kein LADE enthält.
+    Bereich: Anfang = Ziel der JOV, Ende = letzte Zelle vor dem nächsten Kern-Inhalt; Länge eines Teils = n seiner LADE.
+    Teilname = Name der Bank, sonst teilK. Kommentare gibt es im Flash nicht."""
+    k0 = baenke[0]
+    stellen = _lade_stellen(k0['zellen'])
+    ziele = {z for _, _, _, z in stellen}
+    if len(ziele) != 1: return None
+    a = ziele.pop()
+    oben = [n for n in range(a, 256) if tuple(k0['zellen'].get(n, (0, 0))) != (0, 0) or n in k0['namen']]
+    b = oben[0] - 1 if oben else 255
+    if b < a: return None
+    def tname(k):
+        nm = (baenke[k].get('name') or '').strip()
+        return nm if NAME_RE.match(nm) and nm != (projektname or '').strip() else f'teil{k}'
+    teilname = {k: tname(k) for k in range(1, len(baenke))}
+    laenge = {}
+    for _, k, n, z in stellen + [s for k in range(1, len(baenke)) for s in _lade_stellen(baenke[k]['zellen'], a, b)]:
+        if z == a: laenge.setdefault(k, n or 256)
+    bilder = k0.get('bilder') or []
+    kern = {n: v for n, v in k0['zellen'].items() if not a <= n <= b}
+    out = [f'// Overlay-Paket, aus dem Flash zurückgeholt (Kommentare und Leerzeilen gibt es dort nicht)',
+           f'.bereich {a:03d}-{b:03d}', '>>kern',
+           _lade_einsetzen(disasm(kern, k0['namen'], bilder), kern, 0, 255, a, laenge, teilname).rstrip()]
+    for k in range(1, len(baenke)):
+        teil = {n: tuple(baenke[k]['zellen'].get(n, (0, 0))) for n in range(a, b + 1)}
+        out += ['', f'>>teil {k} {teilname[k]}',
+                _lade_einsetzen(disasm(teil, baenke[k]['namen'], bilder), teil, a, b + 1, a, laenge, teilname).rstrip()]
+    return '\n'.join(out) + '\n'
 
 
 def serve(port):
@@ -1153,19 +1242,8 @@ def serve(port):
                 if self.path == '/api/zelle':
                     leitung.zelle_schreiben(int(req['zelle']), int(req['befehl']), int(req['argument']))
                     return self.antwort(200, {'ok': True})
-                if self.path == '/api/projekt/editor':          # 6.00: erste Bank des Projekts in den Editor
-                    e = leitung.projekt_bank(int(req['projekt']))
-                    if e is None: raise FlashFehler(f"Projekt {int(req['projekt'])} gibt es nicht")
-                    k = leitung.bank_komplett(e['bank'])
-                    namen = k['namen'] or namen_lesen(req.get('namen', ''))
-                    an = k['anzeige'] or (bytes(e['anzeige']) if e['anzeige'] else None)
-                    st = k['roh'][0x13]
-                    return self.antwort(200, {'projekt': e['nr'], 'bank': e['bank'], 'name': e['name'] or k['name'],
-                                              'start': 0 if st == 0xFF else st,
-                                              'namen': namen_text(namen), 'namen_aus_bank': bool(k['namen']),
-                                              'anzeige': text_aus_anzeige(an) if an else '', 'bilder': bilder_text(k['bilder']),
-                                              'zellen': {f'{a:03d}': list(v) for a, v in k['zellen'].items()},
-                                              'listing': disasm(k['zellen'], namen, k['bilder'])})
+                if self.path == '/api/projekt/editor':          # erste Bank, bei Overlay-Paketen alle Teile (6.22+)
+                    return self.antwort(200, leitung.projekt_editor(int(req['projekt']), req.get('namen', '')))
                 if self.path == '/api/projekt/editor_speichern' and ist_paket(req.get('quelltext', '')):
                     nr = int(req['projekt']); st = req.get('start'); an = (req.get('anzeige') or '').strip()
                     alt = leitung.projekt_bank(nr)

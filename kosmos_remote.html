@@ -410,20 +410,20 @@ function zeigeVerz(v) {
     const auto = v.autoboot === e.nr;
     tr.innerHTML = `<td>${zwei(e.nr)}${auto ? ' <span class="stern" title="Autoboot">★</span>' : ''}</td><td></td>` +
       `<td class="start">${drei(e.bank)}${e.res > 1 ? '–' + drei(e.bank + e.res - 1) : ''}</td><td class="knopf"><button class="b" data-a="laden">Laden</button> ` +
-      `<button class="b zweit" data-a="sichern" title="Erste Bank des Projekts direkt aus dem Flash in den Editor holen (RAM bleibt)">In Editor</button> ` +
+      `<button class="b zweit" data-a="sichern" title="Projekt direkt aus dem Flash in den Editor holen, ein Overlay-Paket mit allen Teilen (RAM bleibt)">In Editor</button> ` +
       `<button class="b zweit" data-a="auto"${auto ? ' disabled' : ''}>Autoboot</button> ` +
       `<button class="b zweit" data-a="weg" title="Projekt aus dem Verzeichnis nehmen (~10 s)">Löschen</button></td>`;
     tr.children[1].textContent = e.name || '–';
     tr.querySelector('[data-a=laden]').onclick = ev => flashTat(ev.target, '/api/flash/laden', { projekt: e.nr },
       `Projekt ${zwei(e.nr)} geladen · RUN startet`, false);
     tr.querySelector('[data-a=sichern]').onclick = ev => lange(ev.target, $('#flashM'), async () => {
-      const r = await api('/api/projekt/editor', { projekt: e.nr, namen: '' });   // nur die Namen dieser Bank
+      const r = await api('/api/projekt/editor', { projekt: e.nr, namen: '' });   // Paket: alle Teile (dauert je Bank ~6 s)
       nm.value = r.namen_aus_bank ? r.namen : '';
       bl.value = r.bilder || '';
       insEditor(r.listing, `projekt${zwei(e.nr)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
       $('#fBank').value = e.nr; $('#fBank').dataset.angefasst = 1; $('#fName').value = (r.name || '').trim();
       $('#fStart').value = ''; $('#fAnz').value = r.anzeige || ''; anzVorschau();
-      return `Projekt ${zwei(e.nr)}${r.name ? ' „' + r.name.trim() + '“' : ''} im Editor (Start ${drei(r.start)}, RAM unberührt)`;
+      return `Projekt ${zwei(e.nr)}${r.name ? ' „' + r.name.trim() + '“' : ''} im Editor${r.paket ? ` – Overlay-Paket: Kern + ${r.teile - 1} Teile` : ''} (Start ${drei(r.start)}, RAM unberührt)`;
     });
     tr.querySelector('[data-a=auto]').onclick = ev => flashTat(ev.target, '/api/flash/autoboot', { projekt: e.nr },
       `Autoboot: Projekt ${zwei(e.nr)}`, true);
