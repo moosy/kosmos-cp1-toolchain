@@ -1,4 +1,4 @@
-/* kosmos_rc – Übertragung zum Kosmos CP1 direkt über die GPIO-Register (/dev/gpiomem). Firmware 5.00.
+/* kosmos_rc – Übertragung zum Kosmos CP1 direkt über die GPIO-Register (/dev/gpiomem). Firmware ab 5.00.
  *
  * Läuft dauerhaft neben kosmos_remote.py (Pipe): je Zeile auf stdin ein Auftrag
  *   NIE (Fernsteuerung im Interrupt des CP1):   <rahmen-hex oder -> <bits>
@@ -16,6 +16,11 @@
  * Leitungen (Pi Zero, BCM-Nummern): D = GPIO 26 (Pin 37, Klemme 8 = P1.7), T = GPIO 19 (Pin 35, Klemme 7 = P1.6).
  * Low = Ausgang mit 0, sonst Eingang (CP1 und Pullup ziehen hoch) – beide Seiten ziehen nur nach low.
  * Echtzeit (SCHED_FIFO) braucht CAP_SYS_NICE (kommt vom systemd-Dienst).
+ * Schlafen statt Drehen (2026-11-18): Der Pi Zero hat nur einen Kern. Aktives Warten mit Echtzeitpriorität lässt
+ * dem Rest des Systems nur die 5 %, die Linux für Nicht-Echtzeit zurückhält, und nach 950 ms Echtzeit in einer
+ * Sekunde hält Linux uns zwangsweise 50 ms an – womöglich mitten in einem Bit. Deshalb wird bei FNI die High-Phase
+ * vor jedem Bit geschlafen (sie ist nur eine Mindestzeit), und lange Wartezeiten auf den CP1 (Flash löschen und
+ * schreiben) schlafen nach AKTIV_US in kleinen Schritten. Aktiv bleiben nur T-low, die NIE-Pulse und das Messen.
  *
  * gcc -O2 -o kosmos_rc kosmos_rc.c
  */
@@ -39,10 +44,12 @@
 #define NULL_US 150
 #define LUECKE_US 50
 /* FNI: Mindestzeiten; Verzögerungen des Pi verlängern nur (der CP1 fragt alle 15 µs ab) */
-#define FNI_LOW_US 80             /* der CP1 (4 MHz, Abfrage alle 22,5 µs) hält T nach höchstens ~45 µs fest */
+#define FNI_LOW_US 80             /* der CP1 (6 MHz, Abfrage alle 15..30 µs) hält T nach höchstens ~30 µs fest */
 #define FNI_HIGH_US 100           /* T high, bevor der Pi wieder zieht: der CP1 muss das High sicher sehen */
 #define FNI_ANNAHME_US 300000  /* so lange auf „T low“ (Auftrag übernommen) warten */
 #define FNI_FRIST_US 5000000   /* so lange darf der CP1 T festhalten (Flash löschen/kopieren) */
+#define AKTIV_US 1500          /* so lange aktiv auf den CP1 warten, danach in SCHLAF_NS-Schritten schlafen */
+#define SCHLAF_NS 50000
 
 static volatile uint32_t *g;
 
@@ -52,6 +59,8 @@ static inline uint64_t us(void) {
     return (uint64_t)t.tv_sec * 1000000u + t.tv_nsec / 1000;
 }
 static inline void warte_bis(uint64_t t) { while (us() < t) ; }
+/* schlafen (gibt die CPU ab); dauert eher länger – nur für Mindestzeiten */
+static inline void schlafe_ns(long ns) { struct timespec s = { 0, ns }; nanosleep(&s, NULL); }
 static inline void low(void) {
     g[0x28 / 4] = 1u << GPIO;                                   /* GPCLR0 */
     g[0x08 / 4] = (g[0x08 / 4] & ~(7u << 18)) | (1u << 18);     /* GPFSEL2: Ausgang */
@@ -69,21 +78,25 @@ static void ende(int sig) { los(); t_los(); _exit(sig ? 128 + sig : 0); }   /* n
 
 /* ---------------- FNI ---------------- */
 static int t_warten(int pegel_soll, uint64_t frist_us) {
-    uint64_t ende_ = us() + frist_us;
-    while (t_pegel() != pegel_soll) if (us() > ende_) return 0;
+    uint64_t start = us(), ende_ = start + frist_us;
+    while (t_pegel() != pegel_soll) {
+        uint64_t jetzt = us();
+        if (jetzt > ende_) return 0;
+        if (jetzt - start > AKTIV_US) schlafe_ns(SCHLAF_NS);   /* der CP1 löscht/schreibt gerade */
+    }
     return 1;
 }
 static int blocknr = 0;
 static int bit_senden(int b) {
     if (!t_warten(1, FNI_FRIST_US)) return 0;
-    warte_bis(us() + FNI_HIGH_US);
+    schlafe_ns(FNI_HIGH_US * 1000L);             /* Mindestzeit high – geschlafen, gibt die CPU ab */
     if (b) los(); else low();
     uint64_t t = us(); t_low(); warte_bis(t + FNI_LOW_US); t_los();
     return 1;
 }
 static int bit_lesen(int *b) {
     if (!t_warten(1, FNI_FRIST_US)) return 0;
-    warte_bis(us() + FNI_HIGH_US);
+    schlafe_ns(FNI_HIGH_US * 1000L);
     los();
     uint64_t t = us(); t_low(); warte_bis(t + FNI_LOW_US); t_los();
     if (!t_warten(1, FNI_FRIST_US)) return 0;    /* der CP1 hat D gesetzt und lässt T los */
