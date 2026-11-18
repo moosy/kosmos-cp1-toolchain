@@ -153,15 +153,39 @@ den Charakter des Geräts zu verlieren.
   verlangt zusätzlich „ALLES OK“ als letzte Zeile, in `v5/` und `v6/`. Frühere grüne Läufe sind trotzdem gültig:
   Die Logs zeigten bei jeder Reihe „ALLES OK“.
 
+## 2026-11-18 – Umstieg auf 6.x im Gerät, 6.22: Bank leeren
+
+- **6.21 im CP1.** Neuer AT28C256 im T48: vorher zweimal gelesen (leer, FF), geschrieben, geprüft, zurückgelesen.
+  Michael hat A13 (8049 Pin 32, P1.5) und A14 (8049 Pin 28, P1.1/SCK) direkt an EEPROM Pin 26 und Pin 1 gelegt und den
+  Chip getauscht: `6.21` erscheint, läuft. Der alte AT28C64B behält 5.08.
+- **Pi-Software 6.x auf bastelpi**, Flash neu: Die sechs gesicherten Projekte kamen als 01–06 zurück, Autoboot aus.
+  Beim ersten Versuch ist bastelpi hart neu gestartet (am CP1 blieb `P-F.Err`, Auftrag abgebrochen). Michael vermutet
+  einen Spannungseinbruch. Beim zweiten Versuch habe ich jede Sekunde `vcgencmd get_throttled` mitgeschrieben: immer 0x0.
+- **Lücke gefunden:** Ein Projekt bekommt vier Bänke reserviert, beschrieben werden aber nur die benutzten. In den übrigen
+  standen noch 5.x-Bänke (bei Asteroiden eine alte Asteroiden-Kopie und ein alter Namenstest). `projekt-sichern` lieferte
+  sie mit, und `JOV` hätte sie geladen. Im Simulator fing das Flash immer leer an, deshalb fiel es dort nicht auf.
+- **6.22:** Neuer Auftrag `$30` „Bank leeren“ (beide Sektoren löschen). Ein neu angelegtes Projekt bekommt alle reservierten
+  Bänke leer, und `projekt-einspielen` leert die unbenutzten. Neuer Test `test_leeren` mit 5.x-Resten im Flash.
+- **Fehler von mir, durch die Gegenprobe gefunden:** Zuerst hatte ich `$2C` gewählt. Ältere Firmware prüft unbekannte Aufträge
+  nach Bits, und Bit 2 heißt dort „Projekt laden“. Ein 6.21 hätte also beim Leeren das RAM mit einem Projekt überschrieben.
+  `test_leeren` gegen das 6.21-Abbild zeigte das. `$30` hat keins der Bits 7/3/2.
+- **Fehler in der Pi-Software:** Am Gerät meldete `bank-leeren` „Fehler F-P.rdY“. Der Pi hielt jede Anzeige, die mit F beginnt,
+  für einen Fehler, und `F-P.rdY` stand noch vom Verzeichnislesen da. Jetzt zählt nur `F  .0nn`. Mein erster Ausdruck hatte
+  den Punkt vor der Nummer vergessen, `test_remote5` hat es bemerkt.
+- 6.22 gebrannt (zweiter 28C256), im CP1. 16 Altlast-Bänke geleert, alle sechs Projekte danach Zelle für Zelle gleich mit
+  den Dateien.
+
 ## Chips und Stände
 
 | Firmware | SHA-256 (Anfang) | Wo |
 |---|---|---|
-| 6.21 | e595c1d5 | Simulator, wartet auf 28C256 |
+| 6.22 | 3c306906 | im CP1 (seit 2026-11-18) |
+| 6.21 | e595c1d5 | zweiter 28C256, Rückfall |
 | 6.20 | 9bd7de80 | Simulator |
 | 6.10 | 1c65d5c9 | Simulator |
 | 6.00 | f0c70050 | Simulator |
-| 5.07 | bd35a143 | im CP1 (seit 2026-11-15) |
+| 5.08 | – | alter AT28C64B (altes Flash-Format) |
+| 5.07 | bd35a143 | – |
 | 5.06 | 7bc4d312 | Rückfall |
 | 5.05 | 3e404bb0 | – |
 | 5.04 | fd58cbc6 | – |
@@ -176,4 +200,4 @@ den Charakter des Geräts zu verlieren.
 - Pi-Pins immer als Pin und BCM nennen.
 
 ---
-*Geschrieben von Claude (KI), 2026-11-15, fortgeschrieben 2026-11-17.*
+*Geschrieben von Claude (KI), 2026-11-15, fortgeschrieben 2026-11-18.*

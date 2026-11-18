@@ -34,7 +34,7 @@ def warte(m, ms):
 
 print('Start')
 m0 = CP1(ROM, True, vorlauf=False, flash=SPIFlash()); m0.bis(500_000)
-pruef('Version „  6.21 “ (Punkt nach der 6)', list(m0.anzeige()) == [0, 0, 0xfd, 0x5b, 0x06, 0], str([hex(x) for x in m0.anzeige()]))
+pruef('Version „  6.22 “ (Punkt nach der 6)', list(m0.anzeige()) == [0, 0, 0xfd, 0x5b, 0x5b, 0], str([hex(x) for x in m0.anzeige()]))
 m0.bis(1_500_000)
 pruef('Fernsteuerung immer an (RC_FLAG Bit 0)', m0.ram[0x46] & 1 == 1, hex(m0.ram[0x46]))
 

@@ -86,7 +86,7 @@ Quelle `firmware/v6/befehle.asm`, 36 Routinen.
 
 ## Block 1001 – Aufträge: was mit dem Flash geschehen soll (Projekte, SEF, PSK/FRD/FWR/JOV, Autoboot)
 
-Quelle `firmware/v6/auftraege.asm`, 31 Routinen.
+Quelle `firmware/v6/auftraege.asm`, 32 Routinen.
 
 | Adresse | Routine | Zweck |
 |---|---|---|
@@ -100,31 +100,32 @@ Quelle `firmware/v6/auftraege.asm`, 31 Routinen.
 | 4900 | `ka_anlegen` | Anlegen: erste Lücke für VZ_W Bänke ab Bank 4 (jeder belegte Eintrag, der den Kandidaten schneidet, schiebt ihn |
 | 494C | `ka_frei` | Lücke gefunden: ggf. erst den Verzeichniskopf anlegen (Rest des Sektors FF), dann den Eintrag schreiben |
 | 499E | `kp_bank` | Projekt gefunden bzw. angelegt: A = erste Bank. Jetzt die eigentliche Arbeit. |
-| 49DC | `ks_speichern` | ganze Bank: Zellen 0..MEM_SIZE aus RAM 0 |
+| 49E5 | `ks_speichern` | ganze Bank: Zellen 0..MEM_SIZE aus RAM 0 |
 | 4A00 | `kl_laden` | Bank des Projekts ins RAM laden, Start-PC setzen |
 | 4A44 | `j_autoboot` | Autoboot-Projekt F_BANK (RUN lang, Fernsteuerung $08; 0 = aus) -> Bank 1 (Einstellungen), Byte 0x000 |
-| 4A60 | `f_boot` | Autoboot beim Einschalten (aus s_boot): Bank 1, Byte 0x000 (00/FF = aus) |
-| 4A87 | `bl_suche` | nächstes belegtes Projekt nach F_BANK, nach 99 wieder von vorn. Name 0..5 -> F_NAME, |
-| 4AF1 | `vz_adr` | Hilfen fürs Verzeichnis (rufen den Treiber nicht: Stapel) |
-| 4B0A | `vz_kopf` | Adresse 0x000 (Kopf) mit F_SEKT = R6; R1 = F_PUF, R2 = 6 (zum Lesen) |
-| 4B19 | `vz_kennung` | C = 1, wenn F_PUF 0..3 = „CP1V“ |
-| 4B37 | `vz_kopf_puf` | „CP1V“, 01 (Version), A (frei, 00) ab @R1 |
-| 4B48 | `vz_roh` | Rohschreiben vorbereiten: Fenster ab F_OFH:F_OFL (von vz_adr/vz_kopf), R1 Byte aus VZ_PUF; F_JOB = R2 |
-| 4B5F | `vz_kollision` | belegter Eintrag in F_PUF (erste Bank f, reserviert r) gegen den Kandidaten [VZ_S, VZ_S + VZ_W). |
-| 4B87 | `vz_sichern` | / vz_zurueck: Parameter des Auftrags (F_ANF, F_ANZ, F_RAM, F_JOB) <-> VZ_SAV; vz_sichern: F_BANK -> VZ_N |
-| 4B9E | `vz_zurueck` | Auftragsparameter aus VZ_SAV zurückholen (Gegenstück zu vz_sichern) |
-| 4BAF | `k_merken` | S_PBANK = erste Bank (F_BANK), S_PRES = reservierte Bänke (für PSK/FRD/FWR/SEF des Programms) |
-| 4BBC | `k_cal_vor` | s_cal-Vorspann: Auftrag der Fernsteuerung, sonst CAL von Hand (1111) |
-| 4C00 | `fni_fp` | $24 Flash -> Pi |
-| 4C6F | `fni_vz` | $2A (6.00) Verzeichnis kompakt -> Pi: Kopf, dann je belegtem Eintrag n fünf Blöcke [n, 0 x7] und die 32 Byte des |
-| 4D00 | `fni_ve` | $2B (6.00) Verzeichnis-Eintrag F_START = n vom Pi (Kopf $2B, 0, 0, 16 = 4 Blöcke à 8 Byte): direkt in den freien |
-| 4D45 | `fvz_lies` | R2 Byte (0: keins) von Byte F_ANF des Eintrags F_START (R6 = Sektor von Bank 0) nach F_LPUF; setzt dabei |
-| 4D71 | `fn_block8` | 8 Byte ab F_LPUF als Block an den Pi |
-| 4D7B | `fni_pf` | $22 / $23 Pi -> Flash (mit Name aus F_NAME); Kopf und Blöcke holt f_fwr selbst (fw_fni_*) |
+| 4A60 | `j_leeren` | $30 (6.22, Fernsteuerung): Bank F_BANK leeren (beide Sektoren löschen). Der Pi leert damit die reservierten Bänke, |
+| 4A68 | `f_boot` | Autoboot beim Einschalten (aus s_boot): Bank 1, Byte 0x000 (00/FF = aus) |
+| 4A8F | `bl_suche` | nächstes belegtes Projekt nach F_BANK, nach 99 wieder von vorn. Name 0..5 -> F_NAME, |
+| 4AF9 | `vz_adr` | Hilfen fürs Verzeichnis (rufen den Treiber nicht: Stapel) |
+| 4B12 | `vz_kopf` | Adresse 0x000 (Kopf) mit F_SEKT = R6; R1 = F_PUF, R2 = 6 (zum Lesen) |
+| 4B21 | `vz_kennung` | C = 1, wenn F_PUF 0..3 = „CP1V“ |
+| 4B3F | `vz_kopf_puf` | „CP1V“, 01 (Version), A (frei, 00) ab @R1 |
+| 4B50 | `vz_roh` | Rohschreiben vorbereiten: Fenster ab F_OFH:F_OFL (von vz_adr/vz_kopf), R1 Byte aus VZ_PUF; F_JOB = R2 |
+| 4B67 | `vz_kollision` | belegter Eintrag in F_PUF (erste Bank f, reserviert r) gegen den Kandidaten [VZ_S, VZ_S + VZ_W). |
+| 4B8F | `vz_sichern` | / vz_zurueck: Parameter des Auftrags (F_ANF, F_ANZ, F_RAM, F_JOB) <-> VZ_SAV; vz_sichern: F_BANK -> VZ_N |
+| 4BA6 | `vz_zurueck` | Auftragsparameter aus VZ_SAV zurückholen (Gegenstück zu vz_sichern) |
+| 4BB7 | `k_merken` | S_PBANK = erste Bank (F_BANK), S_PRES = reservierte Bänke (für PSK/FRD/FWR/SEF des Programms) |
+| 4C00 | `k_cal_vor` | s_cal-Vorspann: Auftrag der Fernsteuerung, sonst CAL von Hand (1111) |
+| 4C4A | `fni_fp` | $24 Flash -> Pi |
+| 4D00 | `fni_vz` | $2A (6.00) Verzeichnis kompakt -> Pi: Kopf, dann je belegtem Eintrag n fünf Blöcke [n, 0 x7] und die 32 Byte des |
+| 4D6B | `fni_ve` | $2B (6.00) Verzeichnis-Eintrag F_START = n vom Pi (Kopf $2B, 0, 0, 16 = 4 Blöcke à 8 Byte): direkt in den freien |
+| 4DB0 | `fvz_lies` | R2 Byte (0: keins) von Byte F_ANF des Eintrags F_START (R6 = Sektor von Bank 0) nach F_LPUF; setzt dabei |
+| 4DDC | `fn_block8` | 8 Byte ab F_LPUF als Block an den Pi |
+| 4E00 | `fni_pf` | $22 / $23 Pi -> Flash (mit Name aus F_NAME); Kopf und Blöcke holt f_fwr selbst (fw_fni_*) |
 
 ## Block 1011 – Treiber: wie der Flash gelesen und geschrieben wird, FNI zum Pi
 
-Quelle `firmware/v6/treiber.asm`, 49 Routinen.
+Quelle `firmware/v6/treiber.asm`, 50 Routinen.
 
 | Adresse | Routine | Zweck |
 |---|---|---|
@@ -177,6 +178,7 @@ Quelle `firmware/v6/treiber.asm`, 49 Routinen.
 | 6DCC | `bit_ein` | ein Bit vom Pi -> C. F1 = Zeit um. |
 | 6DD5 | `bit_aus` | C an den Pi. F1 = Zeit um. |
 | 6DDF | `t_takt` | T loslassen, auf T high, dann auf T low (Pi) warten, T festhalten. Je ~200 ms, sonst F1 = 1. |
+| 6DFF | `f_leeren` | Bank F_BANK leeren – beide Sektoren löschen, danach meldet f_zustand $80 (leer). Ohne das |
 
 ## Block 0xxx – Original mit Haken, Fernsteuerung im Interrupt
 
@@ -208,9 +210,9 @@ Die unteren acht 2-KB-Blöcke sind gleich: das Kosmos-Original (nicht im Repo) m
 | 03DC | `rc_abfrage` | Statusabfrage vorbereiten (aus rt_hoch): RAM 0x20..0x3A, ab dem nächsten Takt je ein Byte |
 | 03EA | `rb_schreib` | 03 aa ww: ein Byte ins interne RAM (aus rc_befehl, R1 wird in rb_ende zurückgeholt) |
 
-## Sprungtabelle (59 Einträge: 39 Sprünge zu_X, 20 Fernaufrufe fa_X; in jedem oberen Block an derselben Stelle)
+## Sprungtabelle (60 Einträge: 39 Sprünge zu_X, 21 Fernaufrufe fa_X; in jedem oberen Block an derselben Stelle)
 
 `zu_X` wechselt in den Block von X und springt (JMP). `fa_X` ist ein Fernaufruf von 1001 nach 1011: `ORL P1,#$20` / `CALL X` / `ANL P1,#$df` / `RET`, kostet eine Stapelebene.
 
-`zu_add_imm`, `zu_bl_suche`, `zu_bl_zeige`, `zu_boot_warte`, `zu_end_of_instr`, `zu_error_f003`, `zu_error_f005`, `zu_f_boot`, `zu_inc_pc`, `zu_j_autoboot`, `zu_j_laden`, `zu_j_speichern`, `zu_job_kopf`, `zu_k_cal_vor`, `zu_k_teil`, `zu_run_weiter`, `zu_s_anz`, `zu_s_cal_ui`, `zu_s_f006`, `zu_s_inv`, `zu_s_neg`, `zu_s_p1aus`, `zu_s_pcset`, `zu_s_sef`, `zu_s_und`, `zu_s_vzg`, `zu_sf_ok`, `zu_show_error`, `zu_vgl_imm`, `zu_vgr_imm`, `zu_vkl_imm`, `zu_wait_key`, `zu_fn_abgelehnt`, `zu_fn_fehler`, `zu_fn_gut`, `zu_fni_cp`, `zu_fni_pc`, `zu_k_bereit`, `zu_s_ende`, `fa_anz_durch`, `fa_blk_aus`, `fa_blk_ein`, `fa_f_da`, `fa_f_frd`, `fa_f_fwr`, `fa_f_lies`, `fa_f_prog`, `fa_f_zustand`, `fa_fn_an`, `fa_fn_anh_lies`, `fa_fn_aus`, `fa_fn_bank_pruef`, `fa_fn_block`, `fa_fn_flash_lies`, `fa_fn_links`, `fa_fn_weiter`, `fa_kopf_fuellen`, `fa_kopf_n`, `fa_kopf_pruef`
+`zu_add_imm`, `zu_bl_suche`, `zu_bl_zeige`, `zu_boot_warte`, `zu_end_of_instr`, `zu_error_f003`, `zu_error_f005`, `zu_f_boot`, `zu_inc_pc`, `zu_j_autoboot`, `zu_j_laden`, `zu_j_speichern`, `zu_job_kopf`, `zu_k_cal_vor`, `zu_k_teil`, `zu_run_weiter`, `zu_s_anz`, `zu_s_cal_ui`, `zu_s_f006`, `zu_s_inv`, `zu_s_neg`, `zu_s_p1aus`, `zu_s_pcset`, `zu_s_sef`, `zu_s_und`, `zu_s_vzg`, `zu_sf_ok`, `zu_show_error`, `zu_vgl_imm`, `zu_vgr_imm`, `zu_vkl_imm`, `zu_wait_key`, `zu_fn_abgelehnt`, `zu_fn_fehler`, `zu_fn_gut`, `zu_fni_cp`, `zu_fni_pc`, `zu_k_bereit`, `zu_s_ende`, `fa_anz_durch`, `fa_blk_aus`, `fa_blk_ein`, `fa_f_da`, `fa_f_frd`, `fa_f_fwr`, `fa_f_leeren`, `fa_f_lies`, `fa_f_prog`, `fa_f_zustand`, `fa_fn_an`, `fa_fn_anh_lies`, `fa_fn_aus`, `fa_fn_bank_pruef`, `fa_fn_block`, `fa_fn_flash_lies`, `fa_fn_links`, `fa_fn_weiter`, `fa_kopf_fuellen`, `fa_kopf_n`, `fa_kopf_pruef`
 

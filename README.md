@@ -11,7 +11,7 @@ Quick reference (German, 3 pages A4, firmware 5.07 with all extensions): [cp1-sc
 **Firmware 6.x** for the AT28C256 (32 KB: four 2 KB blocks of own code, 99 projects in the flash, overlays with JOV,
 random numbers with ZUF) is finished in the simulator but not yet burned; the tools in this root directory still
 belong to 5.07. Overview with block layout (German): [docs/firmware6-de.md](docs/firmware6-de.md), every routine with
-its address: [docs/firmware6-routinen-de.md](docs/firmware6-routinen-de.md), quick reference 6.21:
+its address: [docs/firmware6-routinen-de.md](docs/firmware6-routinen-de.md), quick reference 6.22:
 [cp1-schnelluebersicht-6.pdf](cp1-schnelluebersicht-6.pdf), sources and the matching Pi software: [firmware/v6/](firmware/v6/).
 
 Firmware internals, the terminal 7/8 protocol (K78P) with NIE and FNI, jobs and flash layout: [INTERNALS.md](INTERNALS.md)

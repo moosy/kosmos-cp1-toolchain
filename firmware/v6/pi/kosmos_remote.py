@@ -16,6 +16,7 @@ Die Fernsteuerung ist immer an. Befehle:
   kosmos_remote.py autoboot 12               beim Einschalten Projekt 12 starten (0 = aus)
   kosmos_remote.py projekt-einspielen datei.cp1 [12]   Projektdatei ins Flash (ohne Nummer: erster freier Platz)
   kosmos_remote.py projekt-loeschen 12       Projekt 12 aus dem Verzeichnis nehmen
+  kosmos_remote.py bank-leeren 6 [7 …]       Bänke leeren (Firmware 6.22: beide Sektoren löschen); 0..3 nur mit --auch-system
   kosmos_remote.py paket spiel.koa spiel.cp1 [--name N] [--start S] [--bilder b.txt]   Quelltext (auch Overlay-Paket
                                              mit .bereich / >>kern / >>teil k name / LADE name) als Projektdatei
   kosmos_remote.py bank-sichern 12 datei.json            Bank 12 direkt in eine Datei (RAM bleibt; Namen -> datei.json.namen)
@@ -39,7 +40,8 @@ FNI (Interrupt des CP1 aus, sichtbar „Q-Z“): getaktet über Klemme 7, Daten 
   $25 Bank komplett -> Pi (Zellen + 0x200..0x5FF; Bank 0 bis 0xFFF), $29 Pi -> Flash mit Name und Namensbereich
   (Bank 0: ganzes Verzeichnis), 6.00: $2A Verzeichnis kompakt -> Pi, $2B Verzeichnis-Eintrag direkt ($26 entfällt).
   Parameter: F_BANK 0x2C, F_ANF 0x3C, F_ANZ 0x3D (0 = 256), F_START 0x3E, Name 0x60..0x6F; fertig: F_JOB 0 / $EE.
-Weitere Aufträge (Interrupt an): $04 Projekt laden, $08 Autoboot, $80 RAM -> Projekt (F_BANK = Projektnummer). Aufträge gehen nur, wenn der CP1 auf Tasten wartet.
+Weitere Aufträge (Interrupt an): $04 Projekt laden, $08 Autoboot, $80 RAM -> Projekt (F_BANK = Projektnummer).
+6.22: $30 Bank F_BANK leeren (ohne Übertragung, fertig: F_JOB 0; ältere Firmware verwirft $30). Aufträge gehen nur, wenn der CP1 auf Tasten wartet.
 """
 import json, os, re, sys, threading, time, subprocess, tempfile, math
 
@@ -247,8 +249,8 @@ class Leitung:
         else:
             raise FlashFehler('Auftrag nicht fertig geworden')
         text = self.anzeige()['text']
-        if text.startswith('F'):
-            nr = int(text[-3:]) if text[-3:].isdigit() else 0
+        if re.fullmatch(r'F\s*\.?\d{3}', text):           # nur die Fehleranzeige „F  .0nn“ – nicht z. B. ein stehen
+            nr = int(text[-3:])                              #   gebliebenes „F-P.rdY“ (6.22: $30 ändert die Anzeige nicht)
             raise FlashFehler({10: 'F-010: kein Flash gefunden', 11: 'F-011: Bank ist leer',
                                3: 'F-003: Bank/Bereich ungültig', 1: 'F-001'}.get(nr, f'Fehler {text}'))
 
@@ -392,6 +394,11 @@ class Leitung:
     def flash_autoboot(self, nr):
         self.auftrag(0x08, {F_BANK: nr}, frist_s=10)
 
+    def bank_leeren(self, bank):
+        """Bank leeren ($30, Firmware 6.22): beide Sektoren gelöscht, danach gilt die Bank als leer.
+        Ältere Firmware verwirft $30 ohne Wirkung (keins der Bits 7/3/2, die sie als speichern/Autoboot/laden liest)."""
+        self.auftrag(0x30, {F_BANK: bank & 0xFF}, frist_s=10)
+
     # ------------------------------------------------ Programm-RAM und Bänke über FNI
     @staticmethod
     def _bytes(zellen, von, bis):
@@ -484,6 +491,8 @@ class Leitung:
                 bilder = [(x['name'], bytes(x['segmente'])) for x in b.get('bilder', [])]
                 an = bytes(b['anzeige']) if b.get('anzeige') else None
                 self.bank_einspielen(erste + k, z, name, int(p['start']) if k == 0 else None, namen, an, bilder)
+            for k in range(n_b, res):                       # 6.22: reservierte, aber unbenutzte Bänke leeren
+                self.bank_leeren(erste + k)                 #   (sonst bleiben dort alte Inhalte stehen)
             an0 = p['baenke'][0].get('anzeige')
             e = {'nr': nr, 'name': name or None, 'bank': erste, 'res': res, 'anzeige': list(an0) if an0 else None}
             if nr not in pr or eintrag_bytes(pr[nr]) != eintrag_bytes(e):
@@ -1131,6 +1140,9 @@ def serve(port):
                 if self.path == '/api/projekt/loeschen':
                     leitung.projekt_loeschen(int(req['projekt']))
                     return self.antwort(200, {'ok': True})
+                if self.path == '/api/bank/leeren':
+                    leitung.bank_leeren(int(req['bank']))
+                    return self.antwort(200, {'ok': True})
                 if self.path == '/api/reset':
                     return self.antwort(200, {'text': leitung.reset()})
                 if self.path == '/api/ram':
@@ -1305,6 +1317,17 @@ def main(argv):
         if srv: ueber_server('/api/projekt/loeschen', {'projekt': nr}, port=port, timeout=300)
         else: Leitung().projekt_loeschen(nr)
         print(f'Projekt {nr:02d} gelöscht (die Bänke werden bei Bedarf neu vergeben)'); return 0
+    if cmd == 'bank-leeren':
+        alle = '--auch-system' in rest
+        baenke = [int(a) for a in rest if a != '--auch-system']
+        if not baenke: print('bank-leeren: welche Bank?'); return 2
+        if any(b < 4 for b in baenke) and not alle:
+            print('Bank 0..3 sind Verzeichnis und Einstellungen – nur mit --auch-system'); return 2
+        for b in baenke:
+            if srv: ueber_server('/api/bank/leeren', {'bank': b}, port=port)
+            else: Leitung().bank_leeren(b)
+            print(f'Bank {b:03d} geleert')
+        return 0
     if cmd == 'bank-sichern':
         b = int(rest[0])
         if srv:

@@ -1,6 +1,6 @@
 # Kosmos CP1 – Firmware 6.x (AT28C256)
 
-Stand 2026-11-17, Firmware **6.21**. Im Simulator fertig, alle 19 Testreihen grün. Noch nicht im Gerät, das läuft bis zur Ankunft der 28C256 mit **5.07** auf dem AT28C64B.
+Stand 2026-11-18, Firmware **6.22**, alle 20 Testreihen grün. **Seit 2026-11-18 im CP1** auf dem AT28C256 (zuerst 6.21, am selben Tag 6.22). Rückfall: 6.21 auf einem zweiten 28C256, 5.08 auf dem alten AT28C64B (nur mit dem alten Flash-Format).
 
 - Routinenliste mit Adressen: [`firmware6-routinen-de.md`](firmware6-routinen-de.md) (erzeugt)
 - Bedienung zum Ausdrucken: [`cp1-schnelluebersicht-6.pdf`](../cp1-schnelluebersicht-6.pdf), drei Seiten
@@ -20,6 +20,7 @@ Ab 6.00 gilt das Schema **M.mf**:
 | 6.10 | **48 JOV** lädt ein Overlay und springt hinein. Die FNI-Hilfen liegen wieder in 1011. |
 | 6.20 | **49 ZUF**, Zufallszahl (Xorshift 16 Bit, Timer eingemischt). |
 | 6.21 | INP nimmt Befehle bis 49 an, JOV und ZUF lassen sich also auch eintippen. |
+| 6.22 | **Bank leeren:** neuer Auftrag `$30`, und ein neu angelegtes Projekt bekommt alle reservierten Bänke leer. |
 
 ## Warum ein neuer Chip
 
@@ -127,6 +128,10 @@ Die vollständige Liste steht in den `.equ`-Zeilen von `bedienung.asm` und `trei
 - **Anlegen:**
   - Ein neues Projekt bekommt 4 Bänke in der ersten passenden Lücke. Gibt es keine, bekommt es weniger, und wenn gar nichts frei ist, kommt **F-012**.
   - Programme benutzen nur Bänke im eigenen Projekt: `PSK k` mit k < Anzahl, sonst F-003.
+- **Leeren (6.22):** Eine Bank ist leer, wenn keiner ihrer Sektoren gültig ist. Ein gesetztes Byte wird im Flash nur durch Löschen wieder FF, also heißt Leeren: beide Sektoren löschen (`f_leeren`, je 45–300 ms).
+  - Legt der CP1 ein Projekt neu an (CAS, `$80`), leert er alle reservierten Bänke (`kp_neu_b`). Bis 6.21 wurde nur die erste neu geschrieben, in den übrigen blieben alte Inhalte stehen. Nach dem Umstieg von 5.x waren das alte 5.x-Bänke, die `projekt-sichern` dann mit exportierte und die `JOV` geladen hätte.
+  - Der Pi leert mit dem Auftrag **`$30`** (`j_leeren`, ohne Datenübertragung, Ende mit `F_JOB = 0`) nach `projekt-einspielen` die reservierten Bänke, die das Projekt nicht belegt. Von Hand: `kosmos_remote.py bank-leeren 6 7`, Bank 0–3 nur mit `--auch-system`.
+  - Warum `$30` und nicht `$2C`: Unbekannte Aufträge prüft der Verteiler danach nach Bits (Bit 7 speichern, Bit 3 Autoboot, Bit 2 laden). Ein 6.21 hätte `$2C` als „Projekt laden“ ausgeführt und das RAM überschrieben. `$30` hat keins dieser Bits, ältere Firmware verwirft ihn ohne Wirkung.
 
 ## Befehle, die 6.x dazubringt
 
@@ -167,7 +172,7 @@ Beispiele: `examples/beispiel-overlay.koa`, `examples/minenflug-wuerfel.koa` (Mi
 | CAL | Projekte durchblättern (`Pro nn`, dann Kurzanzeige), Ziffern wählen direkt | lädt das gezeigte Projekt (`LdP nn`), im Leerlauf: `Pro __ Fr ___ to ___ d5t ___` lädt einen Teilbereich |
 | RUN | Start | `bot __` Autoboot-Projekt, 00 = aus |
 
-Beim Einschalten erscheint 1 s lang `6.21`, dann 2 s lang `bot nn`. Jede Taste bricht den Autoboot ab.
+Beim Einschalten erscheint 1 s lang `6.22`, dann 2 s lang `bot nn`. Jede Taste bricht den Autoboot ab.
 
 ## Bauen und testen
 
@@ -175,19 +180,20 @@ Beim Einschalten erscheint 1 s lang `6.21`, dann 2 s lang `bot nn`. Jede Taste b
 cd firmware
 cp /pfad/zu/cp1.asm .        # Kosmos-Original (asig, bitgleich zu MAME cp1-2716), nicht im Repo
 python3 v6/build6.py         # -> v6/cp1v6-eeprom.bin (32 KB), cp1v6.sym, cp1v6.ohneint
-sh v6/alle_tests.sh          # 18 Testreihen im Simulator (sim48), mit PROJEKTE=<Ordner mit .cp1> 19
+sh v6/alle_tests.sh          # 19 Testreihen im Simulator (sim48), mit PROJEKTE=<Ordner mit .cp1> 20
                              # grün nur, wenn jede Reihe mit Exit-Code 0 und „ALLES OK“ endet
 python3 v6/routinen.py > ../docs/firmware6-routinen-de.md
 ```
 
-- **Erwarteter Hash** (SHA-256 des Abbilds), Anfang: 6.00 `f0c70050c6eeee32`, 6.10 `1c65d5c9d65e7161`, 6.20 `9bd7de80ba731d48`, **6.21 `e595c1d5c3480317`**.
+- **Erwarteter Hash** (SHA-256 des Abbilds), Anfang: 6.00 `f0c70050c6eeee32`, 6.10 `1c65d5c9d65e7161`, 6.20 `9bd7de80ba731d48`, 6.21 `e595c1d5c3480317`, **6.22 `3c306906ce87cb37`**.
 - **Pi-Software 6.x:** liegt in `firmware/v6/pi/` (`kosmos_remote.py`, `.html`, `kosmos_rc.c`, Assembler und Disassembler mit ZUF/JOV/LADE).
-  - Im Hauptordner bleibt die Fassung für 5.07, solange das Gerät mit 5.07 läuft.
+  - Im Hauptordner liegt noch die Fassung für 5.07. Auf bastelpi läuft seit 2026-11-18 die Fassung aus `pi/`.
   - Die Tests in `v6/` nehmen automatisch die Fassung aus `pi/`.
 
 ## Offen
 
-- Brennen auf den 28C256, sobald die Chips da sind: erst lesen, dann schreiben, dann prüfen. Danach die Pi-Software aus `pi/` in den Hauptordner übernehmen.
+- Pi-Software aus `pi/` in den Hauptordner übernehmen; die 5.07-Fassung dann nach `firmware/v5/pi/`, damit die 5.x-Tests sie weiter finden.
+- `bank-leeren` meldet auch bei älterer Firmware „geleert“: Sie verwirft `$30`, und der Pi kann das nicht unterscheiden.
 - Die LADE-Regel prüft der Assembler nicht.
 - `projekt-einspielen` löscht einen schon gesetzten Autoboot nicht.
 - Lädt der Pi ein Programm, schreibt er alle 256 Zellen. Dabei wird auch die ZUF-Zelle 0, was harmlos ist: ZUF macht aus 0 eine 1.

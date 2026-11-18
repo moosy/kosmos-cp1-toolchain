@@ -1147,3 +1147,22 @@ tt_w:           DJNZ R4, tt_l1
 tt_um:          CLR  F1
                 CPL  F1
                 RET
+
+; f_leeren (6.22): Bank F_BANK leeren – beide Sektoren löschen, danach meldet f_zustand $80 (leer). Ohne das
+; blieben in reservierten, aber unbenutzten Bänken alte Inhalte stehen. Dauert 2 x 45..300 ms. Benutzt R0, R4, R5.
+f_leeren:       MOV  R0, #F_SEKT
+                MOV  @R0, #$00
+fle_l:          CLR  A
+                INC  R0
+                MOV  @R0, A             ; F_OFH
+                INC  R0
+                MOV  @R0, A             ; F_OFL
+                CALL f_wren
+                MOV  A, #$20            ; Sektor löschen
+                CALL f_cmd
+                CALL f_warte
+                MOV  R0, #F_SEKT
+                MOV  A, @R0
+                MOV  @R0, #$10
+                JZ   fle_l              ; nach Sektor 0 noch Sektor 1
+                RET

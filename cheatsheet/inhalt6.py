@@ -1,8 +1,8 @@
-# Inhalt des Cheat Sheets für Firmware 6.21 (28C256) (wird von satz.py ausgeführt). Anzeigen im Raster "X YY ZZZ" wie am Gerät (8 88 888).
+# Inhalt des Cheat Sheets für Firmware 6.22 (28C256) (wird von satz.py ausgeführt). Anzeigen im Raster "X YY ZZZ" wie am Gerät (8 88 888).
 
 def seite1(s):
-    s.titel('Kosmos CP1 · Schnellübersicht', 'Firmware 6.21 · Stand 17.11.2026')
-    s.absatz('Firmware 6.21 auf dem AT28C256 im EA-Adapter (beim Einschalten 1 s `  6.21 `). Neu oder geändert: ★')
+    s.titel('Kosmos CP1 · Schnellübersicht', 'Firmware 6.22 · Stand 18.11.2026')
+    s.absatz('Firmware 6.22 auf dem AT28C256 im EA-Adapter (beim Einschalten 1 s `  6.22 `). Neu oder geändert: ★')
     s.balken('Funktionstasten')
     s.tabelle([17, 0], [
         ['**RUN**', 'Programmlauf starten (★ beim Loslassen). ★ **1 s halten:** Autoboot-Projekt wählen (`bot __`, Seite 2).'],
@@ -77,7 +77,7 @@ def seite2(s):
     s.balken('★ RUN 1 s: Autoboot · ★ Reset')
     s.tabelle([50, 0], [
         ['`bot __`, `09` RUN', 'beim Einschalten Projekt 09 laden und starten (`bot rdY`). **00** schaltet ab.'],
-        ['Einschalten', '`  6.21 `, dann `bot 09` für 2 s: **jede Taste bricht ab**, sonst wird geladen und gestartet.'],
+        ['Einschalten', '`  6.22 `, dann `bot 09` für 2 s: **jede Taste bricht ab**, sonst wird geladen und gestartet.'],
         ['**CLR halten + STP**', 'Reset wie Aus- und Einschalten: Speicher, Stapel, OVF weg; dann Version und Autoboot. Auch im Programmlauf.'],
     ])
     s.balken('★ SEG: eigene Zeichen auf der Anzeige')
@@ -149,6 +149,7 @@ def seite3(s):
         ['~kosmos_remote.py taste 0 0 0 pc run~', 'Tasten drücken (cal:1500 = 1,5 s halten).'],
         ['~kosmos_remote.py flash~ · ~autoboot 9~ ', 'Projektverzeichnis (Nummer, Bänke, Name, Kurzanzeige) · Autoboot-Projekt.'],
         ['~projekt-sichern 8 x.cp1~ · ~projekt-einspielen x.cp1 [8]~', 'ganzes Projekt als Datei (alle Bänke, Labels, Bilder) und zurück.'],
+        ['~bank-leeren 6 7~', '★ Bänke leeren (6.22); Einspielen leert unbenutzte reservierte Bänke selbst.'],
         ['~paket spiel.koa spiel.cp1~', 'Quelltext, auch Overlay-Paket, als Projektdatei; dann projekt-einspielen.'],
         ['~kosmos_remote.py zelle 35~ · ~reset~', 'Zelle lesen/setzen, auch im Programmlauf · Reset wie CLR + STP.'],
         ['~kosmos_asm.php~ · ~kosmos_disasm.php -n namen.txt~', 'Assembler · Disassembler mit Namen (`035=display_loop`).'],

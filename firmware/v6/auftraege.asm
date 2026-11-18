@@ -269,10 +269,10 @@ ka_kopf:        ANL  A, #$7f            ; ab jetzt gibt es ein Verzeichnis
 ; Projekt gefunden bzw. angelegt: A = erste Bank. Jetzt die eigentliche Arbeit.
 kp_bank:        MOV  R0, #F_BANK
                 MOV  @R0, A
-                CALL fa_f_zustand       ; R6 = Zustand der Projektbank
-                MOV  R0, #VZ_ART        ; neu angelegt, aber die Bank hat noch alten Inhalt: erst leeren
-                MOV  A, @R0
+                MOV  R0, #VZ_ART        ; neu angelegt: erst alle reservierten Bänke leeren (6.22; vorher nur die erste,
+                MOV  A, @R0             ;   in den übrigen blieben alte Inhalte stehen)
                 JB6  kp_neu_b
+kp_zustand:     CALL fa_f_zustand       ; R6 = Zustand der Projektbank
 kp_arbeit:      CALL vz_zurueck         ; VZ_SAV -> F_ANF, F_ANZ, F_RAM, F_JOB
                 MOV  R0, #VZ_ART
                 MOV  A, @R0
@@ -293,15 +293,23 @@ kt_schreib:     CALL fa_f_fwr
 kb_s:           JMP  ks_speichern
 kb_l:           JMP  kl_laden
 kb_f011:        JMP  kp_f011
-kp_neu_b:       MOV  A, R6
-                JB7  kp_arbeit          ; ohnehin leer
-                CALL vz_kopf            ; Fenster 0x000, Länge 0: alles wie leer
-                MOV  R1, #0
-                MOV  R2, #$91
-                CALL vz_roh
-                CALL fa_f_fwr
-                CALL fa_f_zustand
-                JMP  kp_arbeit
+kp_neu_b:       MOV  R0, #VZ_RES        ; VZ_W (Anlegen ist fertig) zählt die Bänke
+                MOV  A, @R0
+                MOV  R0, #VZ_W
+                MOV  @R0, A
+kpn_l:          CALL fa_f_leeren
+                MOV  R0, #F_BANK
+                INC  @R0
+                MOV  R0, #VZ_W
+                MOV  A, @R0
+                DEC  A
+                MOV  @R0, A
+                JNZ  kpn_l
+                MOV  R0, #VZ_S          ; wieder die erste Bank
+                MOV  A, @R0
+                MOV  R0, #F_BANK
+                MOV  @R0, A
+                JMP  kp_zustand         ; (jetzt leer: R6 = $80)
 
 ks_speichern:   MOV  R0, #F_ANF         ; ganze Bank: Zellen 0..MEM_SIZE aus RAM 0
                 MOV  @R0, #$00
@@ -377,6 +385,13 @@ j_autoboot:     CALL fa_f_da
                 CALL fa_f_fwr
                 JMP  k_bereit
 ja_f010:        JMP  kp_f010
+
+; $30 (6.22, Fernsteuerung): Bank F_BANK leeren (beide Sektoren löschen). Der Pi leert damit die reservierten Bänke,
+; die ein eingespieltes Projekt nicht belegt. Keine Datenübertragung: Ende wie $08 mit F_JOB = 0, ohne Flash F-010.
+j_leeren:       CALL fa_f_da
+                JNC  ja_f010
+                CALL fa_f_leeren
+                JMP  k_ende
 
 ; Autoboot beim Einschalten (aus s_boot): Bank 1, Byte 0x000 (00/FF = aus)
 f_boot:         CALL fa_f_da
@@ -636,7 +651,7 @@ k_merken:       MOV  R0, #F_BANK
 ; =====================================================================
 ; Aufträge der Fernsteuerung per FNI (6.00 aus 1011 hierher: dort bleiben Treiber und Übertragung)
 ; CAL mit F_JOB <> 0 (NIE 04): $20 P-C, $21 C-P, $22/$23/$29 P-F, $24 F-P, $25 Bank komplett, $2A Verzeichnis kompakt,
-; $2B Verzeichnis-Eintrag; $80/$81/$04/$08 (mit Interrupt) über job_kopf in 1111. Blöcke, Bytes, Bits: 1011 (fa_…).
+; $2B Verzeichnis-Eintrag, $30 Bank leeren (6.22); $80/$81/$04/$08 (mit Interrupt) über job_kopf in 1111. Blöcke, Bytes, Bits: 1011 (fa_…).
 ; =====================================================================
 ; s_cal-Vorspann: Auftrag der Fernsteuerung, sonst CAL von Hand (1111)
 k_cal_vor:      MOV  R0, #F_JOB
@@ -660,6 +675,9 @@ k_cal_vor:      MOV  R0, #F_JOB
                 JZ   kv_vz
                 XRL  A, #$01            ; $2B (6.00: Verzeichnis-Eintrag schreiben)
                 JZ   kv_ve
+                XRL  A, #$1b            ; $30 (6.22: Bank leeren; ohne die Bits 7/3/2, die ältere Firmware unten als
+                                        ;   $80/$08/$04 ausführen würde – $30 ist dort ein unbekannter Auftrag)
+                JZ   kv_bl
                 MOV  A, @R0
                 JB7  kv_job
                 JB2  kv_job
@@ -672,6 +690,7 @@ kv_pf:          JMP  fni_pf
 kv_fp:          JMP  fni_fp
 kv_vz:          JMP  fni_vz
 kv_ve:          JMP  fni_ve
+kv_bl:          JMP  j_leeren
 kv_job:         JMP  zu_job_kopf        ; 5.05: $80/$81/$04/$08 – Kopfanzeige in 1111, dann j_* in 1001
 kv_tasten:      JMP  zu_s_cal_ui        ; CAL von Hand: Abfragen in 1111
 

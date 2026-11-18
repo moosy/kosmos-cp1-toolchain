@@ -24,7 +24,7 @@ sh v6/alle_tests.sh         # 19 test series in the simulator
 python3 v6/routinen.py > ../docs/firmware6-routinen-de.md
 ```
 
-SHA-256 of a correct 6.21 build starts with `e595c1d5` (6.20: `9bd7de80`).
+SHA-256 of a correct 6.22 build starts with `3c306906` (6.21: `e595c1d5`, 6.20: `9bd7de80`).
 
 Build 5.x (from this directory):
 
