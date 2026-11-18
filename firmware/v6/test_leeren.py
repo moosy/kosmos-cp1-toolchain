@@ -2,7 +2,7 @@
 Inhalte (z. B. 5.x-Reste nach dem Umstieg) darin stehen bleiben. Leitung wie in test_projekt."""
 import sys, os
 _hier = os.path.dirname(os.path.abspath(__file__))
-for _p in (os.path.join(_hier, '..', '..'), os.path.join(_hier, '..', 'fernsteuerung'), os.path.join(_hier, '..', '..', 'remote'), _hier, os.path.join(_hier, 'pi')):  # pi/: Pi-Software 6.x im Repo
+for _p in (os.path.join(_hier, '..', '..'), os.path.join(_hier, '..', 'fernsteuerung'), os.path.join(_hier, '..', '..', 'remote'), _hier):
     sys.path.insert(0, _p)                     # Repo-Wurzel bzw. ältere Ablagen
 from sim48 import CP1, SPIFlash, text
 from pi_fni import FNIPi

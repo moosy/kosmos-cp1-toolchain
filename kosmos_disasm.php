@@ -62,7 +62,9 @@ $cmd = array(
   44 => "VKL#",
   45 => "UND#",
   46 => "ODR#",
-  47 => "SEF"   # ab Firmware 5.06: Bild aus Bank 255
+  47 => "SEF",  # ab Firmware 5.06: Bild aus der Projektbank
+  48 => "JOV",  # ab Firmware 6.10: Overlay laden und hinspringen (PSK k / PSK n / JOV z)
+  49 => "ZUF"   # ab Firmware 6.20: Zufallszahl 0..n-1 (ZUF 0: 0..255)
 );
 
 $cmddesc = array(
@@ -113,7 +115,9 @@ $cmddesc = array(
   44 => "Prüfen, ob Akku kleiner als %s ist (ab Firmware 5.06)",
   45 => "Akku bitweise UND %s (ab Firmware 5.06)",
   46 => "Akku bitweise ODER %s (ab Firmware 5.06)",
-  47 => "Zellen %s bis +5 der Bilderbank 255 als Segmentmuster anzeigen (255 = Anzeige löschen; ab Firmware 5.06)"
+  47 => "Zellen %s bis +5 der Bilderbank 255 als Segmentmuster anzeigen (255 = Anzeige löschen; ab Firmware 5.06)",
+  48 => "Overlay: n Zellen ab %s aus Bank k des Projekts laden (PSK k, PSK n), dann dorthin springen (ab Firmware 6.10)",
+  49 => "Zufallszahl 0 bis %s minus 1 in den Akku (0: 0 bis 255); Zustand in der letzten Zelle (ab Firmware 6.20)"
 );
 
 $noarg = array("HLT","RET","PSH","POP");

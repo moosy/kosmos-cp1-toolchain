@@ -156,7 +156,7 @@ print(f'     Eintrag schreiben: {ms:.0f} ms Simulationszeit')
 auftrag(m, 0x26, 0, 0, 0, frist_ms=500)
 pruef('$26: unbekannt, F_JOB = 0, nichts passiert', m.ram[F_JOB] == 0)
 print('5.03: $29 Pi -> Flash mit Name und Namensbereich 0x300..0x5FF')
-sys.path.insert(0, '../..'); sys.path.insert(0, '../../remote'); sys.path.insert(0, '../fernsteuerung'); sys.path.insert(0, 'pi')
+sys.path.insert(0, '../..'); sys.path.insert(0, '../../remote'); sys.path.insert(0, '../fernsteuerung')
 from kosmos_remote import namen_bytes, namen_aus_bytes
 namen = {0: 'start', 5: 'schleife', 100: 'punkte', 255: 'ende'} | {i: f'n{i:03d}_langername' for i in range(10, 50)}
 nb = namen_bytes(namen)

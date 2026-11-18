@@ -2,7 +2,7 @@
 Leitung (wie kosmos_rc), FNI über das Pi-Modell pi_fni (wie kosmos_rc „F …“)."""
 import sys, os
 _hier = os.path.dirname(os.path.abspath(__file__))
-for _p in (os.path.join(_hier, '..', '..'), os.path.join(_hier, '..', 'fernsteuerung'), os.path.join(_hier, '..', '..', 'remote'), _hier):
+for _p in (os.path.join(_hier, '..', '..'), os.path.join(_hier, '..', 'fernsteuerung'), os.path.join(_hier, '..', '..', 'remote'), _hier, os.path.join(_hier, 'pi')):  # pi/: Pi-Software 5.07 (Hauptordner: 6.x)
     sys.path.insert(0, _p)                     # Repo-Wurzel bzw. ältere Ablagen
 from sim48 import CP1, SPIFlash, text
 from pi_fni import FNIPi

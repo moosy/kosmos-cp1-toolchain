@@ -1,7 +1,7 @@
 """5.06: Bilder für SEF über die Pi-Seite: Bildertabelle -> Namensbereich -> Firmware zeigt sie; Assembler „SEF name“."""
 import sys, os
 hier = os.path.dirname(os.path.abspath(__file__))
-for p in (os.path.join(hier, '..', '..'), hier, os.path.join(hier, 'pi')): sys.path.insert(0, p)
+for p in (os.path.join(hier, '..', '..'), hier): sys.path.insert(0, p)
 from sim48 import CP1, SPIFlash, text
 import kosmos_remote as kr
 ROM = open(os.path.join(hier, 'cp1v6-eeprom.bin'), 'rb').read()

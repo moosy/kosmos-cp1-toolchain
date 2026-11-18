@@ -8,8 +8,7 @@
  *     Antwort:  OK <low_us> <low_us> ...   bzw.  TIMEOUT <low_us> ...
  *   FNI (CP1 mit abgeschaltetem Interrupt, getaktet):   F <E|A|K|N> <anf> <anz> <kopf-hex> [<daten-hex>]
  *     E = Pi sendet (Pi -> 8155 / Flash), A = Pi empfängt; anf/anz = Zellen (anz 0 = 256), kopf = 4 Byte
- *     K = Bank komplett empfangen: 256 Zellen + 0x200..0x5FF (6.00: Bank 0 = Verzeichnis bis 0xFFF)
- *     V = Verzeichnis kompakt (6.00, $2A): je belegtem Eintrag [n, 0 x7] + 4 Blöcke à 8, Ende [0 x8] -> n + 32 Byte
+ *     K = Bank komplett empfangen: 256 Zellen + Bankkopf 18 Byte (Blöcke 8/8/2)
  *     N = alle Namen: je Bank Blöcke 8/8/2 = Bank, 0, Name 16; Ende = 8-Byte-Block mit Bank 0
  *     Antwort:  OK [<daten-hex>]   bzw.  FEHLER <grund>
  *
@@ -126,10 +125,9 @@ static int block_lesen(uint8_t *d, int n) {
     return -1;
 }
 static void fni(char *zeile) {
-    char richtung; unsigned anf, anz; char kopfhex[16] = ""; static char datenhex[9000];
-    static uint8_t daten[4096 + 512];             /* 6.00: Verzeichnis 0x000..0xFFF; $2A bis 99 x 33 Byte */
-    datenhex[0] = 0;
-    if (sscanf(zeile, "F %c %u %u %15s %8999s", &richtung, &anf, &anz, kopfhex, datenhex) < 4 || strlen(kopfhex) != 8) { printf("FEHLER Aufruf\n"); return; }
+    char richtung; unsigned anf, anz; char kopfhex[16] = "", datenhex[2700] = "";
+    static uint8_t daten[256 * 18 + 600];
+    if (sscanf(zeile, "F %c %u %u %15s %2699s", &richtung, &anf, &anz, kopfhex, datenhex) < 4 || strlen(kopfhex) != 8) { printf("FEHLER Aufruf\n"); return; }
     uint8_t kopf[4]; for (int i = 0; i < 4; i++) { unsigned x; sscanf(kopfhex + 2 * i, "%2x", &x); kopf[i] = x; }
     int zellen = anz ? (int)anz : 256, laenge = 0;
     if (richtung == 'E') {
@@ -140,27 +138,7 @@ static void fni(char *zeile) {
     los(); t_los(); blocknr = 0;
     if (!t_warten(0, FNI_ANNAHME_US)) { printf("FEHLER nicht_angenommen\n"); return; }
     int r;
-    if (richtung == 'V') {          /* 6.00: Verzeichnis kompakt */
-        uint8_t k[4]; r = block_lesen(k, 4);
-        if (r != 1 || memcmp(k, kopf, 4)) { printf("FEHLER Kopf\n"); los(); t_los(); return; }
-        for (;;) {
-            uint8_t b[8];
-            if (laenge + 33 > (int)sizeof daten) { printf("FEHLER zu_viele\n"); los(); t_los(); return; }
-            if (block_lesen(b, 8) != 1) { printf("FEHLER Verzeichnis\n"); los(); t_los(); return; }
-            if (b[0] == 0) break;
-            daten[laenge] = b[0];
-            for (int i = 0; i < 4; i++)
-                if (block_lesen(daten + laenge + 1 + 8 * i, 8) != 1) { printf("FEHLER Verzeichnis\n"); los(); t_los(); return; }
-            laenge += 33;
-        }
-        los();
-        if (!t_warten(1, FNI_FRIST_US)) { printf("FEHLER Ende\n"); t_los(); return; }
-        printf("OK ");
-        for (int i = 0; i < laenge; i++) printf("%02x", daten[i]);
-        printf("\n");
-        return;
-    }
-    if (richtung == 'N') {          /* alle Namen (bis 5.08) */
+    if (richtung == 'N') {          /* alle Namen */
         uint8_t k[4]; r = block_lesen(k, 4);
         if (r != 1 || memcmp(k, kopf, 4)) { printf("FEHLER Kopf\n"); los(); t_los(); return; }
         for (;;) {
@@ -190,8 +168,8 @@ static void fni(char *zeile) {
     if (richtung == 'E')            /* 5.03 ($29): Namensbereich in 8-Byte-Blöcken */
         for (; pos < laenge; pos += 8)
             if ((r = block_senden(daten + pos, 8)) != 1) { printf("FEHLER Namen_%s\n", r ? "aufgegeben" : "Zeit"); los(); t_los(); return; }
-    if (richtung == 'K')            /* 5.03: 0x200..0x5FF in 128 Blöcken à 8; 6.00 Bank 0 (Verzeichnis): bis 0xFFF, 448 */
-        for (int i = 0; i < (kopf[1] == 0 ? 448 : 128); i++, pos += 8)
+    if (richtung == 'K')            /* 5.03: 0x200..0x5FF (Name, Generation, gültig, Namensbereich), 128 Blöcke à 8 */
+        for (int i = 0; i < 128; i++, pos += 8)
             if (block_lesen(daten + pos, 8) != 1) { printf("FEHLER Bankkopf\n"); los(); t_los(); return; }
     los();
     if (!t_warten(1, FNI_FRIST_US)) { printf("FEHLER Ende\n"); t_los(); return; }
@@ -212,7 +190,7 @@ int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     printf("BEREIT %s\n", rt ? "rt" : "ohne-rt");
 
-    static char zeile[9200];
+    char zeile[3000];
     static unsigned lows[4096];
     while (fgets(zeile, sizeof zeile, stdin)) {
         if (zeile[0] == 'F') { fni(zeile); continue; }

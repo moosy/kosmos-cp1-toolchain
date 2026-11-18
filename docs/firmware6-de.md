@@ -186,13 +186,11 @@ python3 v6/routinen.py > ../docs/firmware6-routinen-de.md
 ```
 
 - **Erwarteter Hash** (SHA-256 des Abbilds), Anfang: 6.00 `f0c70050c6eeee32`, 6.10 `1c65d5c9d65e7161`, 6.20 `9bd7de80ba731d48`, 6.21 `e595c1d5c3480317`, **6.22 `3c306906ce87cb37`**.
-- **Pi-Software 6.x:** liegt in `firmware/v6/pi/` (`kosmos_remote.py`, `.html`, `kosmos_rc.c`, Assembler und Disassembler mit ZUF/JOV/LADE).
-  - Im Hauptordner liegt noch die Fassung für 5.07. Auf bastelpi läuft seit 2026-11-18 die Fassung aus `pi/`.
-  - Die Tests in `v6/` nehmen automatisch die Fassung aus `pi/`.
+- **Pi-Software 6.x:** liegt im Hauptordner des Repos (`kosmos_remote.py`, `.html`, `kosmos_rc.c`, Assembler und Disassembler mit ZUF/JOV/LADE) und läuft so auf bastelpi.
+  - Die Fassung für 5.07 liegt in `firmware/v5/pi/`. Die 5.x-Tests nehmen sie von dort, `kosmos_schnell.py` teilen sich beide.
 
 ## Offen
 
-- Pi-Software aus `pi/` in den Hauptordner übernehmen; die 5.07-Fassung dann nach `firmware/v5/pi/`, damit die 5.x-Tests sie weiter finden.
 - `bank-leeren` meldet auch bei älterer Firmware „geleert“: Sie verwirft `$30`, und der Pi kann das nicht unterscheiden.
 - Die LADE-Regel prüft der Assembler nicht.
 - `projekt-einspielen` löscht einen schon gesetzten Autoboot nicht.

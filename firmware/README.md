@@ -9,9 +9,10 @@ put that file into this directory first.
 firmware/
   cp1.asm            <- not included, copy it here from asig/kosmos-cp1
   asm48.py           own MCS-48 assembler (bit-exact with MAME cp1-2716 for the original)
-  v5/                firmware 5.x (AT28C64B): sources, simulator, tests, review tools
+  v5/                firmware 5.x (AT28C64B): sources, simulator, tests, review tools,
+                     pi/ = Pi software for 5.07 (the root directory holds the one for 6.x)
   v6/                firmware 6.x (AT28C256): four block sources, build with stack check, simulator, tests,
-                     routinen.py (routine list), pi/ = Pi software for 6.x (not yet deployed)
+                     routinen.py (routine list); Pi software: repository root
   history/schnell/   firmware 3.0x (fast cassette, remote control) - reference only
   history/flash4/    firmware 4.0x (SPI flash) - reference only, expects the old v4/ layout
 ```

@@ -112,7 +112,7 @@
         <button class="t" data-k="out">OUT<small>auslesen</small></button>
         <button class="t" data-k="inp">INP<small>eingeben</small></button>
       </div>
-      <p class="hinweis">Tasten so lange halten wie am Gerät: CAS kurz = ganzes RAM ins Projekt, CAL kurz = Projekte blättern, lang (1 s) = Bereich; RUN lang = Autoboot. Tastatur: Ziffern, Enter = INP, P = PC, R = RUN, S = STP, Leertaste = STEP, C = CLR, A = ACC, O = OUT.</p>
+      <p class="hinweis">Tasten so lange halten wie am Gerät: CAS/CAL kurz = ganze Bank, lang (1 s) = Bereich; RUN lang = Autoboot. Tastatur: Ziffern, Enter = INP, P = PC, R = RUN, S = STP, Leertaste = STEP, C = CLR, A = ACC, O = OUT.</p>
     </div>
   </section>
 
@@ -136,7 +136,7 @@
         <div class="rechts">
           <label for="namen">Namen (Adresse=Name)</label>
           <textarea id="namen" spellcheck="false" placeholder="035=display_loop&#10;134=punkte"></textarea>
-          <label for="bilder" title="Bilder für SEF (ab Firmware 5.06): liegen im Flash des Projekts, nicht im RAM. Im Programm: SEF titel, SEF lauf+3. „.“ = Punkt, #1,2,3 = Segmentwerte. Gelten, nachdem das Programm mit „Editor speichern“ im Projekt liegt.">Bilder für SEF (Name=Text)</label>
+          <label for="bilder" title="Bilder für SEF (ab Firmware 5.06): liegen im Flash der Bank, nicht im RAM. Im Programm: SEF titel, SEF lauf+3. „.“ = Punkt, #1,2,3 = Segmentwerte. Gelten, nachdem das Programm mit „Editor speichern“ in der Bank liegt.">Bilder für SEF (Name=Text)</label>
           <textarea id="bilder" spellcheck="false" placeholder="titel=MInEn&#10;explo=8.8.8.8.8.8.&#10;lauf=  HALLO CP1  "></textarea>
         </div>
       </div>
@@ -149,28 +149,28 @@
       <div class="meldung" id="ladenM"></div>
     </section>
     <section class="panel breit">
-      <h2>Flash <span class="klein">· Projekte 01–99 (Firmware 6.00), nur wenn kein Programm läuft</span></h2>
+      <h2>Flash <span class="klein">· Firmware 5.x, nur wenn kein Programm läuft</span></h2>
       <div class="knoepfe">
         <button class="b" id="verzLesen">Verzeichnis lesen</button>
         <span class="klein" id="autoInfo"></span>
         <button class="b zweit" id="autoAus" hidden>Autoboot aus</button>
       </div>
       <table class="verz" id="verz" hidden>
-        <thead><tr><th>Nr.</th><th>Name</th><th class="start">Bänke</th><th></th></tr></thead>
+        <thead><tr><th>Bank</th><th>Name</th><th class="start">Start</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
       <div class="knoepfe" style="margin-top:14px">
-        <span class="klein">In Projekt</span>
-        <input type="number" id="fBank" min="1" max="99" value="1" aria-label="Projekt">
+        <span class="klein">In Bank</span>
+        <input type="number" id="fBank" min="1" max="255" value="1" aria-label="Bank">
         <input type="text" id="fName" maxlength="16" placeholder="Name (16 Zeichen)" aria-label="Name">
         <span class="klein">Start</span>
         <input type="number" id="fStart" min="0" max="255" placeholder="PC" aria-label="Startadresse">
         <span class="klein">Anzeige</span>
         <input type="text" id="fAnz" maxlength="12" placeholder="aus dem Namen" aria-label="Anzeige beim Blättern (6 Stellen)" style="width:120px"
-               title="So erscheint das Projekt beim Blättern mit CAL (6 Stellen, „.“ = Punkt). Leer: die ersten Buchstaben des Namens.">
+               title="So erscheint die Bank beim Blättern mit CAL (6 Stellen, „.“ = Punkt). Leer: die ersten Buchstaben des Namens.">
         <span class="miniAnz"><svg id="anzVorschau" viewBox="0 0 430 92" role="img" aria-label="Vorschau der Anzeige"></svg></span>
-        <button class="b" id="fSpeichern" title="Inhalt des CP1-RAM ins Projekt (neu: der CP1 legt es an; Start leer = PC)">RAM speichern</button>
-        <button class="b zweit" id="fEditor" title="Programm aus dem Editor assemblieren und mit den Namen direkt in die erste Bank des Projekts schreiben, das RAM bleibt unberührt">Editor speichern</button>
+        <button class="b" id="fSpeichern" title="Inhalt des CP1-RAM in die Bank (Start leer = PC)">RAM speichern</button>
+        <button class="b zweit" id="fEditor" title="Programm aus dem Editor assemblieren und mit den Namen direkt in die Bank schreiben, das RAM bleibt unberührt">Editor speichern</button>
       </div>
       <div class="meldung" id="flashM"></div>
     </section>
@@ -342,19 +342,15 @@ async function assemble() {
   return r;
 }
 $('#assemblieren').onclick = () => lange($('#assemblieren'), $('#ladenM'), async () => {
-  const r = await assemble();
-  const t = (r.teile || []).map(x => `Teil ${x.k} ${x.name} ${x.laenge} Zellen`).join(', ');
-  return `ok: ${t ? 'Kern' : 'Zellen'} 000–${drei(r.bis)}${t ? ' · Bereich ' + drei(r.bereich[0]) + '–' + drei(r.bereich[1]) + ' · ' + t : ''}, Zeilennummern und Namen aktualisiert`;
+  const r = await assemble(); return `ok: Zellen 000–${drei(r.bis)}, Zeilennummern und Namen aktualisiert`;
 });
 $('#ladenQ').onclick = () => lange($('#ladenQ'), $('#ladenM'), async () => {
   const a = await assemble();
   const zellen = Object.fromEntries(Object.entries(a.zellen).filter(([k]) => +k <= a.bis));
   const sef = /^\s*(\d{1,3}:?\s+)?SEF\s+(?!255\b)/im.test(ed.value);
-  const projekt = +$('#fBank').value;                             // 6.00: SEF/FRD/FWR gelten für das Projekt im Feld
-  const r = await api('/api/laden', { zellen, projekt });
-  if ((a.teile || []).length) return `Kern in den CP1 geladen (Zellen ${drei(r.von)}–${drei(r.bis)}); die Teile holt LADE aus dem Flash: erst „Editor speichern“`;
-  return `in den CP1 geladen: Zellen ${drei(r.von)}–${drei(r.bis)}` +
-    (r.projekt_bank ? ` · gehört zu Projekt ${zwei(projekt)}` + (sef ? ' (SEF zeigt seine Bilder)' : '') : '');
+  const pbank = sef ? +$('#fBank').value : 0;                     // SEF: Bilder aus der Bank im Feld „In Bank“
+  const r = await api('/api/laden', { zellen, pbank });
+  return `in den CP1 geladen: Zellen ${drei(r.von)}–${drei(r.bis)}` + (sef ? ` · SEF zeigt die Bilder aus Bank ${drei(pbank)}` : '');
 });
 function herunterladen(text, endung, typ) {
   const a = document.createElement('a');
@@ -398,46 +394,40 @@ function holen(knopf, obj) {
 }
 $('#holenAlles').onclick = () => holen($('#holenAlles'), {});
 $('#holenTeil').onclick = () => holen($('#holenTeil'), { von: +$('#von').value, bis: +$('#bis').value });
-// ---- Flash (6.00: Projekte)
+// ---- Flash
 const drei = n => String(n).padStart(3, '0');
-const zwei = n => String(n).padStart(2, '0');
 let verzeichnis = null;
 function zeigeVerz(v) {
   verzeichnis = v;
   const tb = $('#verz tbody'); tb.textContent = '';
-  for (const e of v.projekte) {
+  for (const e of v.baenke) {
     const tr = document.createElement('tr');
-    const auto = v.autoboot === e.nr;
-    tr.innerHTML = `<td>${zwei(e.nr)}${auto ? ' <span class="stern" title="Autoboot">★</span>' : ''}</td><td></td>` +
-      `<td class="start">${drei(e.bank)}${e.res > 1 ? '–' + drei(e.bank + e.res - 1) : ''}</td><td class="knopf"><button class="b" data-a="laden">Laden</button> ` +
-      `<button class="b zweit" data-a="sichern" title="Erste Bank des Projekts direkt aus dem Flash in den Editor holen (RAM bleibt)">In Editor</button> ` +
-      `<button class="b zweit" data-a="auto"${auto ? ' disabled' : ''}>Autoboot</button> ` +
-      `<button class="b zweit" data-a="weg" title="Projekt aus dem Verzeichnis nehmen (~10 s)">Löschen</button></td>`;
+    const auto = v.autoboot === e.bank;
+    tr.innerHTML = `<td>${drei(e.bank)}${auto ? ' <span class="stern" title="Autoboot">★</span>' : ''}</td><td></td>` +
+      `<td class="start">${drei(e.start)}</td><td class="knopf"><button class="b" data-a="laden">Laden</button> ` +
+      `<button class="b zweit" data-a="sichern" title="Bank direkt aus dem Flash in den Editor holen (RAM bleibt)">In Editor</button> ` +
+      `<button class="b zweit" data-a="auto"${auto ? ' disabled' : ''}>Autoboot</button></td>`;
     tr.children[1].textContent = e.name || '–';
-    tr.querySelector('[data-a=laden]').onclick = ev => flashTat(ev.target, '/api/flash/laden', { projekt: e.nr },
-      `Projekt ${zwei(e.nr)} geladen · RUN startet`, false);
+    tr.querySelector('[data-a=laden]').onclick = ev => flashTat(ev.target, '/api/flash/laden', { bank: e.bank },
+      `Bank ${drei(e.bank)} geladen, PC = ${drei(e.start)} · RUN startet`, false);
     tr.querySelector('[data-a=sichern]').onclick = ev => lange(ev.target, $('#flashM'), async () => {
-      const r = await api('/api/projekt/editor', { projekt: e.nr, namen: '' });   // nur die Namen dieser Bank
+      const r = await api('/api/bank/sichern', { bank: e.bank, namen: '' });   // nur die Namen dieser Bank
       nm.value = r.namen_aus_bank ? r.namen : '';
       bl.value = r.bilder || '';
-      insEditor(r.listing, `projekt${zwei(e.nr)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
-      $('#fBank').value = e.nr; $('#fBank').dataset.angefasst = 1; $('#fName').value = (r.name || '').trim();
-      $('#fStart').value = ''; $('#fAnz').value = r.anzeige || ''; anzVorschau();
-      return `Projekt ${zwei(e.nr)}${r.name ? ' „' + r.name.trim() + '“' : ''} im Editor (Start ${drei(r.start)}, RAM unberührt)`;
+      insEditor(r.listing, `bank${drei(e.bank)}${r.name ? '-' + r.name.trim().replace(/[^\w-]+/g, '_') : ''}`);
+      $('#fBank').value = e.bank; $('#fBank').dataset.angefasst = 1; $('#fName').value = (r.name || '').trim();
+      $('#fAnz').value = r.anzeige || ''; anzVorschau();
+      return `Bank ${drei(e.bank)}${r.name ? ' „' + r.name.trim() + '“' : ''} im Editor (RAM unberührt)`;
     });
-    tr.querySelector('[data-a=auto]').onclick = ev => flashTat(ev.target, '/api/flash/autoboot', { projekt: e.nr },
-      `Autoboot: Projekt ${zwei(e.nr)}`, true);
-    tr.querySelector('[data-a=weg]').onclick = ev => {
-      if (!confirm(`Projekt ${zwei(e.nr)}${e.name ? ' „' + e.name + '“' : ''} löschen? (Die Bänke werden bei Bedarf neu vergeben.)`)) return;
-      flashTat(ev.target, '/api/projekt/loeschen', { projekt: e.nr }, `Projekt ${zwei(e.nr)} gelöscht`, true);
-    };
+    tr.querySelector('[data-a=auto]').onclick = ev => flashTat(ev.target, '/api/flash/autoboot', { bank: e.bank },
+      `Autoboot: Bank ${drei(e.bank)}`, true);
     tb.appendChild(tr);
   }
-  $('#verz').hidden = !v.projekte.length;
-  $('#autoInfo').textContent = !v.vorhanden ? 'noch kein Verzeichnis (entsteht beim ersten Speichern)'
-    : v.projekte.length ? (v.autoboot ? `Autoboot: Projekt ${zwei(v.autoboot)}` : 'Autoboot aus') : 'keine Projekte';
+  $('#verz').hidden = !v.baenke.length;
+  $('#autoInfo').textContent = v.baenke.length ? (v.autoboot ? `Autoboot: Bank ${drei(v.autoboot)}` : 'Autoboot aus')
+                                                 : 'Flash ist leer';
   $('#autoAus').hidden = !v.autoboot;
-  const frei = [...Array(99).keys()].map(i => i + 1).find(n => !v.projekte.some(e => e.nr === n));
+  const frei = [...Array(255).keys()].map(i => i + 1).find(b => !v.baenke.some(e => e.bank === b));
   if (frei && !$('#fBank').dataset.angefasst) $('#fBank').value = frei;
 }
 function flashTat(knopf, pfad, obj, text, neuLesen) {
@@ -451,30 +441,29 @@ $('#fBank').oninput = () => { $('#fBank').dataset.angefasst = 1; };
 $('#fAnz').oninput = $('#fName').oninput = anzVorschau;
 $('#verzLesen').onclick = () => lange($('#verzLesen'), $('#flashM'), async () => {
   const v = await api('/api/flash'); zeigeVerz(v);
-  return `${v.projekte.length} Projekt${v.projekte.length === 1 ? '' : 'e'}`;
+  return `${v.baenke.length} belegte Bank${v.baenke.length === 1 ? '' : 'en'}`;
 });
-$('#autoAus').onclick = () => flashTat($('#autoAus'), '/api/flash/autoboot', { projekt: 0 }, 'Autoboot aus', true);
+$('#autoAus').onclick = () => flashTat($('#autoAus'), '/api/flash/autoboot', { bank: 0 }, 'Autoboot aus', true);
 $('#fSpeichern').onclick = () => {
-  const projekt = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
-  if (!(projekt >= 1 && projekt <= 99)) { $('#flashM').textContent = 'Projekt 1..99'; return; }
-  if (verzeichnis?.projekte.some(e => e.nr === projekt) && !confirm(`Projekt ${zwei(projekt)} überschreiben?`)) return;
-  flashTat($('#fSpeichern'), '/api/flash/speichern', { projekt, name, start: start === '' ? null : +start },
-    `RAM in Projekt ${zwei(projekt)} gespeichert`, true);
+  const bank = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
+  if (!(bank >= 1 && bank <= 255)) { $('#flashM').textContent = 'Bank 1..255'; return; }
+  if (verzeichnis?.baenke.some(e => e.bank === bank) && !confirm(`Bank ${drei(bank)} überschreiben?`)) return;
+  flashTat($('#fSpeichern'), '/api/flash/speichern', { bank, name, start: start === '' ? null : +start },
+    `RAM in Bank ${drei(bank)} gespeichert`, true);
 };
 $('#fEditor').onclick = () => {
-  const projekt = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
-  if (!(projekt >= 1 && projekt <= 99)) { $('#flashM').textContent = 'Projekt 1..99'; return; }
-  const da = verzeichnis?.projekte.find(x => x.nr === projekt);
-  if (da && !confirm(`Projekt ${zwei(projekt)}${da.name ? ' „' + da.name + '“' : ''} mit dem Editor-Programm überschreiben?`)) return;
+  const bank = +$('#fBank').value, name = $('#fName').value, start = $('#fStart').value;
+  if (!(bank >= 1 && bank <= 255)) { $('#flashM').textContent = 'Bank 1..255'; return; }
+  const da = verzeichnis?.baenke.find(x => x.bank === bank);
+  if (da && !confirm(`Bank ${drei(bank)}${da.name ? ' „' + da.name + '“' : ''} mit dem Editor-Programm überschreiben?`)) return;
   lange($('#fEditor'), $('#flashM'), async () => {
     const a = await assemble();
-    const st = start !== '' ? +start : null;                         // leer: bestehender Start bleibt, neues Projekt 0
-    const r = await api('/api/projekt/editor_speichern', { projekt, zellen: a.zellen, quelltext: ed.value, name: name || null, start: st, namen: a.namen, anzeige: $('#fAnz').value, bilder: bl.value });
+    const st = start !== '' ? +start : (da ? null : 0);            // leer: bestehender Start bleibt, neue Bank 0
+    await api('/api/bank/einspielen', { bank, zellen: a.zellen, name: name || null, start: st, namen: a.namen, anzeige: $('#fAnz').value, bilder: bl.value });
     zeigeVerz(await api('/api/flash'));
     const n = a.namen.trim() ? a.namen.trim().split('\n').length : 0;
     const nb = a.bilder.trim() ? a.bilder.trim().split('\n').length : 0;
-    if (r.baenke > 1) return `Overlay-Paket -> Projekt ${zwei(projekt)}: Kern + ${r.baenke - 1} Teil${r.baenke > 2 ? 'e' : ''} ab Bank ${drei(r.bank)} (RAM unberührt)`;
-    return `Editor -> Projekt ${zwei(projekt)}, Bank ${drei(r.bank)} (alle 256 Zellen${n ? ', ' + n + ' Namen' : ''}${nb ? ', ' + nb + ' Bilder' : ''}, RAM unberührt)`;
+    return `Editor -> Bank ${drei(bank)} (alle 256 Zellen${n ? ', ' + n + ' Namen' : ''}${nb ? ', ' + nb + ' Bilder' : ''}, RAM unberührt)`;
   });
 };
 

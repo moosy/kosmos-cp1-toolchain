@@ -2,7 +2,7 @@
 Ziffer = normale Eingabe, STP = Abbruch. Dazu die Kopfanzeigen jetzt aus Hälfte A."""
 import sys, os
 sys.path.insert(0, '.')
-for _p in (os.path.join('..', '..'), os.path.join('..', 'fernsteuerung'), os.path.join('..', '..', 'remote'), os.path.join('..', '..', 'tc'), 'pi'):
+for _p in (os.path.join('..', '..'), os.path.join('..', 'fernsteuerung'), os.path.join('..', '..', 'remote'), os.path.join('..', '..', 'tc')):
     sys.path.insert(0, _p)
 from sim48 import CP1, SPIFlash, text
 from pi_fni import FNIPi

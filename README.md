@@ -6,13 +6,15 @@ See https://de.wikipedia.org/wiki/Kosmos_CP1 for details.
 A comprehensive collection of documentation can be found at 
 http://www.8bit-homecomputermuseum.at/computer/kosmos_computer_praxis_cp1.html.
 
-Quick reference (German, 3 pages A4, firmware 5.07 with all extensions): [cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf)
-
 **Firmware 6.x** for the AT28C256 (32 KB: four 2 KB blocks of own code, 99 projects in the flash, overlays with JOV,
-random numbers with ZUF) is finished in the simulator but not yet burned; the tools in this root directory still
-belong to 5.07. Overview with block layout (German): [docs/firmware6-de.md](docs/firmware6-de.md), every routine with
-its address: [docs/firmware6-routinen-de.md](docs/firmware6-routinen-de.md), quick reference 6.22:
-[cp1-schnelluebersicht-6.pdf](cp1-schnelluebersicht-6.pdf), sources and the matching Pi software: [firmware/v6/](firmware/v6/).
+random numbers with ZUF) runs in the CP1 since 2026-11-18 (6.22). The Pi tools in this root directory belong to 6.x.
+Overview with block layout (German): [docs/firmware6-de.md](docs/firmware6-de.md), every routine with its address:
+[docs/firmware6-routinen-de.md](docs/firmware6-routinen-de.md), quick reference 6.22 (German, 3 pages A4):
+[cp1-schnelluebersicht-6.pdf](cp1-schnelluebersicht-6.pdf), sources: [firmware/v6/](firmware/v6/).
+
+**Firmware 5.07** (AT28C64B, 256 flash banks) is described in the sections below; its quick reference is
+[cp1-schnelluebersicht.pdf](cp1-schnelluebersicht.pdf), its Pi tools are kept in [firmware/v5/pi/](firmware/v5/pi/)
+(`kosmos_schnell.py` is shared). The 6.x flash format is not compatible with 5.x.
 
 Firmware internals, the terminal 7/8 protocol (K78P) with NIE and FNI, jobs and flash layout: [INTERNALS.md](INTERNALS.md)
 
@@ -28,6 +30,9 @@ This toolchain consists of the following tools:
 
 Firmware 5.07 in short
 ----------------------
+
+*This and the following sections describe 5.07 (banks instead of projects). For 6.x see
+[docs/firmware6-de.md](docs/firmware6-de.md) and the 6.x commands under "SPI flash" below.*
 
 The CP1 runs an extended firmware (own code in the 8049's upper address range, two halves of
 an AT28C64B switched by P1.4, see "SPI flash" below). At power-on it shows its version
@@ -159,6 +164,22 @@ FNI protocol (interrupt off): terminal 7 = T (P1.6, clock), terminal 8 = D (P1.7
 
 SPI flash ("hard disk")
 -----------------------
+
+Firmware 6.x (root directory tools):
+
+```
+kosmos_remote.py flash                         project directory (number, banks, name, short display, autoboot)
+kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   CP1 memory -> project 12 (new: the CP1 creates it)
+kosmos_remote.py flash-laden 12                project 12 -> memory, PC = start
+kosmos_remote.py autoboot 12                   start project 12 at power-on (0 = off)
+kosmos_remote.py projekt-sichern 12 x.cp1      whole project (all banks, labels, pictures) -> file; alle-sichern dir/
+kosmos_remote.py projekt-einspielen x.cp1 [12] file -> project (empties unused reserved banks, 6.22)
+kosmos_remote.py projekt-loeschen 12           remove project 12 from the directory
+kosmos_remote.py paket spiel.koa spiel.cp1     source (also overlay package) -> project file
+kosmos_remote.py bank-leeren 6 [7 ...]         empty banks (6.22; banks 0-3 only with --auch-system)
+```
+
+Firmware 5.07 (tools in firmware/v5/pi/):
 
 ```
 kosmos_remote.py flash                         directory (bank, start, name, autoboot)

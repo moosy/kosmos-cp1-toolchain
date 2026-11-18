@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fernsteuerung für den Kosmos CP1, Firmware 6.00 (Projekte; für 5.x: kosmos_remote.py.v5): GPIO 26 <-> P1.7 (Klemme 8), GPIO 19 <-> P1.6 (Klemme 7).
+"""Fernsteuerung für den Kosmos CP1, Firmware 5.03: GPIO 26 <-> P1.7 (Klemme 8), GPIO 19 <-> P1.6 (Klemme 7).
 
 Die Fernsteuerung ist immer an. Befehle:
 
@@ -10,21 +10,13 @@ Die Fernsteuerung ist immer an. Befehle:
   kosmos_remote.py laden datei.json          Zellen ins RAM des CP1 (FNI, ~1 s)
   kosmos_remote.py speichern datei.json [--von N --bis M]   RAM des CP1 in eine Datei (FNI)
   kosmos_remote.py zelle N [B A]             Zelle N lesen bzw. auf B.A setzen (auch bei laufendem Programm)
-  kosmos_remote.py flash                     Projektverzeichnis (Nummer, Bänke, Name, Kurzanzeige, Autoboot)
-  kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   RAM des CP1 ins Projekt 12 (neu: der CP1 legt es an)
-  kosmos_remote.py flash-laden 12            Projekt 12 ins RAM, PC = Start
-  kosmos_remote.py autoboot 12               beim Einschalten Projekt 12 starten (0 = aus)
-  kosmos_remote.py projekt-einspielen datei.cp1 [12]   Projektdatei ins Flash (ohne Nummer: erster freier Platz)
-  kosmos_remote.py projekt-loeschen 12       Projekt 12 aus dem Verzeichnis nehmen
-  kosmos_remote.py bank-leeren 6 [7 …]       Bänke leeren (Firmware 6.22: beide Sektoren löschen); 0..3 nur mit --auch-system
-  kosmos_remote.py paket spiel.koa spiel.cp1 [--name N] [--start S] [--bilder b.txt]   Quelltext (auch Overlay-Paket
-                                             mit .bereich / >>kern / >>teil k name / LADE name) als Projektdatei
+  kosmos_remote.py flash                     Flash-Verzeichnis (Bank, Start, Name, Autoboot)
+  kosmos_remote.py flash-speichern 12 "Rakete" [--start 20]   RAM des CP1 nach Bank 12
+  kosmos_remote.py flash-laden 12            Bank 12 ins RAM, PC = Start
+  kosmos_remote.py autoboot 12               beim Einschalten Bank 12 starten (0 = aus)
   kosmos_remote.py bank-sichern 12 datei.json            Bank 12 direkt in eine Datei (RAM bleibt; Namen -> datei.json.namen)
   kosmos_remote.py bank-einspielen 12 datei.json ["Name"] [--start 20] [--namen datei.namen]   Datei direkt in Bank 12
                                              (--namen: Zuweisungstabelle „035=name“ mit in die Bank, Firmware 5.03)
-  kosmos_remote.py projekt-sichern 8 minenflug.cp1 [--quelltext x.koa]   Projekt 8 komplett als Projektdatei
-  kosmos_remote.py alle-sichern ordner/      jedes Projekt als Projektdatei ordner/NN-name.cp1
-                                             (je Bank: Zellen, Labels, Bilder, Kurzanzeige, roh; dazu Start, Autoboot)
 
 Läuft der Server, gehen die übrigen Befehle über ihn (http://localhost:PORT), sonst direkt.
 
@@ -37,11 +29,10 @@ NIE (im Interrupt des CP1, unbemerkt): Anklopfen = Klemme 8 low. 3,5 ms = Status
   09 00 00  Reset wie Einschalten (5.02, keine Antwort)
 FNI (Interrupt des CP1 aus, sichtbar „Q-Z“): getaktet über Klemme 7, Daten auf Klemme 8, Blöcke mit CRC.
   Aufträge: $20 Pi -> 8155, $21 8155 -> Pi, $22/$23 Pi -> Flash (mit Name), $24 Flash -> Pi,
-  $25 Bank komplett -> Pi (Zellen + 0x200..0x5FF; Bank 0 bis 0xFFF), $29 Pi -> Flash mit Name und Namensbereich
-  (Bank 0: ganzes Verzeichnis), 6.00: $2A Verzeichnis kompakt -> Pi, $2B Verzeichnis-Eintrag direkt ($26 entfällt).
+  $25 Bank komplett -> Pi (Zellen + 0x200..0x5FF: Name, Generation, gültig, Namensbereich), $26 alle Namen -> Pi,
+  $29 Pi -> Flash mit Name und Namensbereich 0x300..0x5FF (5.03; $01 und $10 entfallen).
   Parameter: F_BANK 0x2C, F_ANF 0x3C, F_ANZ 0x3D (0 = 256), F_START 0x3E, Name 0x60..0x6F; fertig: F_JOB 0 / $EE.
-Weitere Aufträge (Interrupt an): $04 Projekt laden, $08 Autoboot, $80 RAM -> Projekt (F_BANK = Projektnummer).
-6.22: $30 Bank F_BANK leeren (ohne Übertragung, fertig: F_JOB 0; ältere Firmware verwirft $30). Aufträge gehen nur, wenn der CP1 auf Tasten wartet.
+Weitere Aufträge (Interrupt an): $04 Bank laden, $08 Autoboot, $80/$81 RAM -> Bank (mit Name). Aufträge gehen nur, wenn der CP1 auf Tasten wartet.
 """
 import json, os, re, sys, threading, time, subprocess, tempfile, math
 
@@ -83,8 +74,7 @@ def segtext(seg):
 
 F_JOB, F_BANK, F_SEKT, F_OFH, F_OFL, F_NAME = 0x26, 0x2c, 0x2d, 0x2e, 0x2f, 0x60
 F_ANF, F_ANZ, F_START, MEM_SIZE = 0x3c, 0x3d, 0x3e, 0x3b
-S_PBANK = 0x5f                            # 6.00: erste Bank des Projekts, aus dem das Programm stammt (SEF, PSK 0)
-S_PRES = 0x5e                             # 6.00: reservierte Bänke des Projekts (PSK k < S_PRES)
+S_PBANK = 0x5f                            # 5.06: Bank, aus der das Programm geladen wurde (Bilder für SEF)
 
 
 def name_text(b):
@@ -189,7 +179,7 @@ class Leitung:
 
     def reset(self):
         """NIE 09 (Firmware 5.02): Kaltstart wie beim Einschalten, alles RAM weg, danach Version und Autoboot.
-        Geprüft an der Versionsanzeige („5.“ oder „6.“ in Stelle 3); -> Anzeige-Text"""
+        Geprüft an der Versionsanzeige („5.“ in Stelle 3); -> Anzeige-Text"""
         with self.lock:
             for v in range(VERSUCHE):
                 self._rc(rahmen(9, 0, 0).hex(), 0)
@@ -198,7 +188,7 @@ class Leitung:
                     a = self.anzeige()
                 except KeineAntwort:
                     continue
-                if a['seg'][2] & 0x7F in (0x6D, 0x7D) and a['seg'][1] == 0 and a['seg'][0] == 0:
+                if a['seg'][2] & 0x7F == 0x6D and a['seg'][1] == 0 and a['seg'][0] == 0:
                     return a['text']
             raise KeineAntwort('kein Reset erkannt – Firmware ab 5.02?')
 
@@ -249,20 +239,20 @@ class Leitung:
         else:
             raise FlashFehler('Auftrag nicht fertig geworden')
         text = self.anzeige()['text']
-        if re.fullmatch(r'F\s*\.?\d{3}', text):           # nur die Fehleranzeige „F  .0nn“ – nicht z. B. ein stehen
-            nr = int(text[-3:])                              #   gebliebenes „F-P.rdY“ (6.22: $30 ändert die Anzeige nicht)
+        if text.startswith('F'):
+            nr = int(text[-3:]) if text[-3:].isdigit() else 0
             raise FlashFehler({10: 'F-010: kein Flash gefunden', 11: 'F-011: Bank ist leer',
                                3: 'F-003: Bank/Bereich ungültig', 1: 'F-001'}.get(nr, f'Fehler {text}'))
 
     # ------------------------------------------------ FNI (Interrupt des CP1 aus, getaktet)
     def fni(self, job, anf, anz, bank=0, daten=b'', start=255, name=None, versuche=3):
-        """Großer Block: job $20..$2B. anz = Zellen (256 -> 0). -> empfangene Bytes (2 je Zelle, bei $25 + Bankkopf,
-        Bank 0 bis 0xFFF; bei $2A je belegtem Eintrag 33 Byte: n + Eintrag)"""
+        """Großer Block: job $20..$26. anz = Zellen (256 -> 0). -> empfangene Bytes (2 je Zelle, bei $25 + Bankkopf,
+        bei $26 je Bank 18 Byte: Bank, 0, Name)"""
         n = anz & 0xFF
         werte = {F_BANK: bank, F_ANF: anf & 0xFF, F_ANZ: n, F_START: start & 0xFF}
         if name is not None:
             werte.update({F_NAME + i: c for i, c in enumerate(name.encode('latin-1', 'replace')[:16].ljust(16, b' '))})
-        richtung = {0x20: 'E', 0x22: 'E', 0x23: 'E', 0x29: 'E', 0x2B: 'E', 0x25: 'K', 0x2A: 'V'}.get(job, 'A')
+        richtung = {0x20: 'E', 0x22: 'E', 0x23: 'E', 0x29: 'E', 0x25: 'K', 0x26: 'N'}.get(job, 'A')
         kopf = bytes([job, bank, anf & 0xFF, n]).hex()
         letzter = ''
         with self.lock:
@@ -317,87 +307,28 @@ class Leitung:
                 except KeineAntwort:
                     if v == VERSUCHE - 1: raise
 
-    # ------------------------------------------------ 6.00: Projekte und Verzeichnis
-    # Bank 0 = Verzeichnis („CP1V“, Version; Eintrag n = 1..99 ab 0x300 + 32 (n - 1): 0..15 Name, 16 erste Bank,
-    # 17 reservierte Bänke, 18 Flags FE = belegt / FF = frei, 19..24 Kurzanzeige), Bank 1 = Einstellungen (0x000 Autoboot),
-    # Projekte ab Bank 4, Start-PC in 0x213 der ersten Projektbank. Der CP1 legt beim Speichern selbst an (4 Bänke);
-    # Löschen und Ändern macht der Pi (ganzes Verzeichnis neu, $29), neue Einträge schreibt er direkt ($2B).
-    def verzeichnis(self):
-        """-> {'vorhanden', 'autoboot', 'projekte': [{'nr', 'name', 'bank', 'res', 'anzeige'}]} ($24 Kopf, $2A Einträge)"""
+    def flash_verzeichnis(self):
+        """-> {'autoboot': n, 'baenke': [{'bank', 'name', 'start'}]}: Bank 0 per FNI + alle Namen per FNI"""
         with self.lock:
-            kopf = self.fni(0x24, 0, 3, bank=0)
-            if kopf[:4] != b'CP1V':
-                return {'vorhanden': False, 'autoboot': 0, 'projekte': []}
-            roh = self.fni(0x2A, 0, 0, bank=0)
-            ab = self.fni(0x24, 0, 1, bank=1)[0]
-        pr = []
-        for i in range(0, len(roh), 33):
-            n, e = roh[i], roh[i + 1:i + 33]
-            pr.append(eintrag_aus_bytes(n, e))
-        return {'vorhanden': True, 'autoboot': 0 if ab == 0xFF else ab, 'projekte': pr}
+            verz = self.fni(0x24, 0, 0, bank=0)           # Bank 0: Zelle 0 = Autoboot, Zelle n = Start von Bank n
+            namen = self.fni(0x26, 0, 0)
+        baenke = []
+        for i in range(0, len(namen), 18):
+            b = namen[i]
+            baenke.append({'bank': b, 'name': name_text(namen[i + 2:i + 18]), 'start': verz[2 * b + 1]})
+        return {'autoboot': verz[1], 'baenke': baenke}
 
-    flash_verzeichnis = verzeichnis
-
-    def verzeichnis_roh(self):
-        """ganzer Verzeichnis-Sektor 0x000..0xFFF ($25 Bank 0, ~12 s)"""
-        d = self.fni(0x25, 0, 0, bank=0)
-        if len(d) != 0x1000: raise FlashFehler(f'Verzeichnis: {len(d)} statt 4096 Byte – Firmware 6.00?')
-        return d
-
-    def verzeichnis_schreiben(self, roh):
-        """ganzen Verzeichnis-Sektor schreiben ($29 Bank 0: Zellenbereich + 0x300..0xFFF, ~10 s)"""
-        roh = bytearray(roh)
-        roh[0:6] = b'CP1V' + bytes([1, 0])
-        zellen = {i: (roh[2 * i], roh[2 * i + 1]) for i in range(256)}
-        self.fni(0x29, 0, 0, bank=0, daten=bytes(roh[0:0x200]) + bytes(roh[0x300:0x1000]), name='Verzeichnis')
-
-    def verzeichnis_anlegen(self):
-        """leeres Verzeichnis (alle Einträge frei); vorhandene Einträge gehen verloren"""
-        roh = bytearray([0xFF]) * 0x1000
-        roh[0:0x200] = bytes(0x200)
-        self.verzeichnis_schreiben(roh)
-
-    def eintrag_schreiben(self, nr, eintrag, v=None):
-        """Eintrag nr (32 Byte) ins Verzeichnis: nur 1 -> 0 nötig: direkt ($2B), sonst ganzes Verzeichnis neu"""
-        if not 1 <= nr <= 99: raise ValueError('Projekt 1..99')
-        v = v or self.verzeichnis()
-        if not v['vorhanden']:
-            self.verzeichnis_anlegen(); v = {'vorhanden': True, 'projekte': []}
-        alt = next((eintrag_bytes(e) for e in v['projekte'] if e['nr'] == nr), b'\xff' * 32)
-        if all(n & a == n for n, a in zip(eintrag, alt)):
-            self.fni(0x2B, 0, 16, bank=0, daten=bytes(eintrag), start=nr)
-        else:
-            roh = bytearray(self.verzeichnis_roh())
-            roh[0x300 + 32 * (nr - 1):0x320 + 32 * (nr - 1)] = eintrag
-            self.verzeichnis_schreiben(roh)
-
-    def projekt_loeschen(self, nr):
-        """Eintrag frei (FF); die Bänke bleiben im Flash, bis ein neues Projekt sie belegt"""
-        roh = bytearray(self.verzeichnis_roh())
-        roh[0x300 + 32 * (nr - 1):0x320 + 32 * (nr - 1)] = b'\xff' * 32
-        self.verzeichnis_schreiben(roh)
-
-    def flash_speichern(self, nr, name='', start=None):
-        """RAM des CP1 ins Projekt nr (Auftrag $80: der CP1 legt neue Projekte selbst an), Name ins Verzeichnis"""
-        werte = {F_BANK: nr}
+    def flash_speichern(self, bank, name='', start=None):
+        werte = {F_NAME + i: c for i, c in enumerate(name.encode('latin-1', 'replace')[:16].ljust(16, b' '))}
         if start is not None: werte[0x38] = start          # PC = Startadresse
-        self.auftrag(0x80, werte, frist_s=15)
-        if name:
-            v = self.verzeichnis()
-            e = next(e for e in v['projekte'] if e['nr'] == nr)
-            if (e['name'] or '') != name:
-                self.eintrag_schreiben(nr, eintrag_bytes(dict(e, name=name)), v)
+        werte[F_BANK] = bank
+        self.auftrag(0x81, werte, frist_s=10)
 
-    def flash_laden(self, nr):
-        self.auftrag(0x04, {F_BANK: nr})
+    def flash_laden(self, bank):
+        self.auftrag(0x04, {F_BANK: bank})
 
-    def flash_autoboot(self, nr):
-        self.auftrag(0x08, {F_BANK: nr}, frist_s=10)
-
-    def bank_leeren(self, bank):
-        """Bank leeren ($30, Firmware 6.22): beide Sektoren gelöscht, danach gilt die Bank als leer.
-        Ältere Firmware verwirft $30 ohne Wirkung (keins der Bits 7/3/2, die sie als speichern/Autoboot/laden liest)."""
-        self.auftrag(0x30, {F_BANK: bank & 0xFF}, frist_s=10)
+    def flash_autoboot(self, bank):
+        self.auftrag(0x08, {F_BANK: bank}, frist_s=10)
 
     # ------------------------------------------------ Programm-RAM und Bänke über FNI
     @staticmethod
@@ -432,73 +363,7 @@ class Leitung:
         anzeige = anzeige_aus_bytes(meta[0x100:0x400]) if mit else None
         bilder = bilder_aus_bytes(meta[0x100:0x400]) if mit else []
         return {'zellen': self._zellen(d[:512], 0), 'name': name_text(meta[:16]), 'namen': namen, 'anzeige': anzeige,
-                'bilder': bilder, 'roh': bytes(meta)}
-
-    def projekt_sichern(self, nr, quelltext=None):
-        """Projekt nr komplett: Verzeichnis-Eintrag + jede belegte Bank ($25) -> Projekt (dict, Format 1)"""
-        with self.lock:
-            v = self.verzeichnis()
-            e = next((e for e in v['projekte'] if e['nr'] == nr), None)
-            if e is None: raise FlashFehler(f'Projekt {nr} gibt es nicht')
-            ks_ = [self.bank_komplett(e['bank'] + k) for k in range(e['res'])]
-        while len(ks_) > 1 and ks_[-1]['roh'][0x11] != 0: ks_.pop()          # leere Bänke am Ende weglassen
-        return projekt_aus_baenken(ks_, e, v['autoboot'] == nr, quelltext)
-
-    def projekt_bank(self, nr):
-        """-> Verzeichnis-Eintrag von Projekt nr oder None"""
-        return next((e for e in self.verzeichnis()['projekte'] if e['nr'] == nr), None)
-
-    def editor_speichern(self, nr, zellen, name=None, start=None, namen=None, anzeige=None, bilder=None):
-        """Editor-Programm in die erste Bank von Projekt nr (neu: anlegen, 4 Bänke); Name/Kurzanzeige ins Verzeichnis.
-        start None: bestehender Start bleibt (neu: 0)"""
-        if not 1 <= nr <= 99: raise ValueError('Projekt 1..99')
-        with self.lock:
-            v = self.verzeichnis()
-            pr = {e['nr']: e for e in v['projekte']}
-            if nr in pr:
-                erste, res = pr[nr]['bank'], pr[nr]['res']
-            else:
-                erste, res = luecke_suchen(pr.values(), 4, 1)
-                if start is None: start = 0
-            name = (name or (pr[nr]['name'] if nr in pr else '') or '')[:16]
-            r = self.bank_einspielen(erste, zellen, name, start, namen, anzeige, bilder)
-            e = {'nr': nr, 'name': name or None, 'bank': erste, 'res': res,
-                 'anzeige': list(anzeige) if anzeige else (pr[nr]['anzeige'] if nr in pr else None)}
-            if nr not in pr or eintrag_bytes(pr[nr]) != eintrag_bytes(e):
-                self.eintrag_schreiben(nr, eintrag_bytes(e), v)
-        return dict(r, projekt=nr)
-
-    def projekt_einspielen(self, p, nr=None):
-        """Projektdatei ins Flash: nr (1..99, sonst erster freier Platz); neues Projekt: max(4, Bänke) reservieren.
-        Bänke mit Name, Labels, Bildern, Kurzanzeige, Start; dann Verzeichnis-Eintrag, ggf. Autoboot. -> nr"""
-        projekt_pruefen(p)
-        with self.lock:
-            v = self.verzeichnis()
-            pr = {e['nr']: e for e in v['projekte']}
-            if nr is None:
-                nr = next((n for n in range(1, 100) if n not in pr), None)
-                if nr is None: raise FlashFehler('alle 99 Projektplätze belegt')
-            n_b = len(p['baenke'])
-            if nr in pr:
-                erste, res = pr[nr]['bank'], pr[nr]['res']
-                if n_b > res: raise FlashFehler(f'Projekt {nr} hat nur {res} Bänke reserviert, die Datei braucht {n_b}')
-            else:
-                erste, res = luecke_suchen(pr.values(), max(4, n_b), n_b)
-            name = (p.get('name') or '')[:16]
-            for k, b in enumerate(p['baenke']):
-                z = {i: tuple(c) for i, c in enumerate(b['zellen'])}
-                namen = {int(a): n for a, n in b.get('labels', {}).items()}
-                bilder = [(x['name'], bytes(x['segmente'])) for x in b.get('bilder', [])]
-                an = bytes(b['anzeige']) if b.get('anzeige') else None
-                self.bank_einspielen(erste + k, z, name, int(p['start']) if k == 0 else None, namen, an, bilder)
-            for k in range(n_b, res):                       # 6.22: reservierte, aber unbenutzte Bänke leeren
-                self.bank_leeren(erste + k)                 #   (sonst bleiben dort alte Inhalte stehen)
-            an0 = p['baenke'][0].get('anzeige')
-            e = {'nr': nr, 'name': name or None, 'bank': erste, 'res': res, 'anzeige': list(an0) if an0 else None}
-            if nr not in pr or eintrag_bytes(pr[nr]) != eintrag_bytes(e):
-                self.eintrag_schreiben(nr, eintrag_bytes(e), v)
-            if p.get('autoboot'): self.flash_autoboot(nr)
-        return nr
+                'bilder': bilder}
 
     def bank_sichern(self, bank, von=0, bis=255):
         """Bank direkt aus dem Flash; das RAM des CP1 bleibt unberührt. Ganze Bank: Komplettdump ($25) mit Name.
@@ -509,9 +374,9 @@ class Leitung:
         return self._zellen(self.fni(0x24, von, bis - von + 1, bank=bank), von), None
 
     def bank_einspielen(self, bank, zellen, name=None, start=None, namen=None, anzeige=None, bilder=None):
-        """Zellen direkt in eine Bank (FNI $22/$23); Rest der Bank bleibt; start != None -> Start-PC (6.00: 0x213).
+        """Zellen direkt in eine Bank (FNI $22/$23); Rest der Bank bleibt; start != None -> Verzeichnis.
         namen (dict, auch leer) -> $29 (5.03): Namensbereich 0x300..0x5FF wird mitgeschrieben (Name dann Pflicht)"""
-        if not 4 <= bank <= 255: raise ValueError('Bank 4..255 (0..3: Verzeichnis, Einstellungen)')
+        if not 1 <= bank <= 255: raise ValueError('Bank 1..255')
         von, bis = min(zellen), max(zellen)
         daten = self._bytes(zellen, von, bis)
         if namen is not None or anzeige is not None or bilder:
@@ -523,110 +388,6 @@ class Leitung:
 
 
 NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
-
-
-# ------------------------------------------------ Projektdatei (.cp1, JSON, Format 1)
-# Ein Projekt = eine oder mehrere Bänke (Index 0 = eigene Bank, PSK 0; k = k-te Bank des Projekts).
-# Je Bank: alle 256 Zellen [Befehl, Argument], Labels, Bilder, eigene Blätter-Anzeige und als Netz der ganze
-# Zusatzbereich 0x200..0x5FF roh (hex). Generation/gültig/Banknummer sind Sache des Flashs (Herkunft nur zur Info:
-# gesichert, aus_baenken, ggf. firmware und angepasst). Programme sprechen weitere Bänke nur relativ an (PSK k).
-PROJEKT_FORMAT, PROJEKT_VERSION = 'cp1-projekt', 1
-
-
-def projekt_aus_baenken(ks_, e, autoboot=False, quelltext=None, firmware=None):
-    """bank_komplett()-Ergebnisse (erste Bank zuerst) + Verzeichnis-Eintrag e -> Projekt (Format 1)"""
-    def bank(k):
-        return {'zellen': [list(k['zellen'][i]) for i in range(256)],
-                'labels': {f'{a:03d}': n for a, n in sorted(k['namen'].items())},
-                'bilder': [{'name': n, 'segmente': list(b)} for n, b in k['bilder']],
-                'anzeige': list(k['anzeige']) if k['anzeige'] else None,
-                'roh': bytes(k['roh']).hex()}
-    st = ks_[0]['roh'][0x13]
-    p = {'format': PROJEKT_FORMAT, 'version': PROJEKT_VERSION,
-         'name': (e.get('name') or ks_[0]['name'] or '').rstrip(), 'start': 0 if st == 0xFF else st,
-         'autoboot': bool(autoboot), 'baenke': [bank(k) for k in ks_],
-         'herkunft': {'gesichert': time.strftime('%Y-%m-%d %H:%M'), 'projekt': e['nr'],
-                      'aus_baenken': [e['bank'] + i for i in range(len(ks_))], 'reserviert': e['res']}}
-    if e.get('anzeige') and not p['baenke'][0]['anzeige']: p['baenke'][0]['anzeige'] = list(e['anzeige'])
-    if firmware: p['herkunft']['firmware'] = firmware
-    if quelltext: p['quelltext'] = quelltext
-    return p
-
-
-def eintrag_aus_bytes(n, e):
-    """32 Byte Verzeichnis-Eintrag -> {'nr', 'name', 'bank', 'res', 'anzeige'}"""
-    nm = bytes(e[0:16])
-    return {'nr': n, 'name': None if nm[0] == 0xFF else nm.split(b'\xff')[0].decode('latin-1').rstrip(),
-            'bank': e[16], 'res': e[17], 'anzeige': None if e[19] == 0xFF else list(e[19:25])}
-
-
-def eintrag_bytes(e):
-    """{'name', 'bank', 'res', 'anzeige'} -> 32 Byte (belegt)"""
-    b = bytearray([0xFF]) * 32
-    if e.get('name'): b[0:16] = e['name'].encode('latin-1', 'replace')[:16].ljust(16)
-    b[16], b[17], b[18] = e['bank'], e['res'], 0xFE
-    if e.get('anzeige'): b[19:25] = bytes(e['anzeige'])
-    return bytes(b)
-
-
-def luecke_suchen(projekte, wunsch, mindestens):
-    """erste Lücke ab Bank 4 für wunsch Bänke, sonst weniger (bis mindestens) -> (erste Bank, Anzahl); wie die Firmware"""
-    belegt = [(e['bank'], e['bank'] + e['res']) for e in projekte]
-    for w in range(wunsch, mindestens - 1, -1):
-        s = 4
-        while s + w <= 256:
-            stoss = [b for a, b in belegt if a < s + w and s < b]
-            if not stoss: return s, w
-            s = max(stoss)
-    raise FlashFehler('Flash voll: keine Lücke für das Projekt')
-
-
-def projekt_pruefen(p):
-    """Format prüfen; lesbare Felder müssen zum Rohbereich passen (verlustfrei). -> p, sonst ValueError"""
-    if p.get('format') != PROJEKT_FORMAT or p.get('version') != PROJEKT_VERSION:
-        raise ValueError(f"kein Projekt im Format {PROJEKT_FORMAT} {PROJEKT_VERSION}")
-    if not 0 <= int(p['start']) <= 255: raise ValueError('start 0..255')
-    if not p.get('baenke'): raise ValueError('keine Bank')
-    for i, b in enumerate(p['baenke']):
-        z = b['zellen']
-        if len(z) != 256 or any(len(c) != 2 or not all(0 <= x <= 255 for x in c) for c in z):
-            raise ValueError(f'Bank {i}: 256 Zellen [Befehl, Argument] 0..255 erwartet')
-        roh = bytes.fromhex(b.get('roh', ''))
-        if roh:
-            if len(roh) != 0x400: raise ValueError(f'Bank {i}: roh muss 0x200..0x5FF sein (1024 Byte)')
-            if roh[0x12] == 0:
-                ns = roh[0x100:0x400]
-                if {f'{a:03d}': n for a, n in sorted(namen_aus_bytes(ns).items())} != b['labels'] or \
-                   [{'name': n, 'segmente': list(x)} for n, x in bilder_aus_bytes(ns)] != b['bilder']:
-                    raise ValueError(f'Bank {i}: Labels/Bilder passen nicht zum Rohbereich')
-    return p
-
-
-def projekt_text(p):
-    """JSON, gut lesbar: je Zeile 8 Zellen"""
-    def z_text(zellen):
-        zeilen = [', '.join(f'[{b},{a}]' for b, a in zellen[i:i + 8]) for i in range(0, 256, 8)]
-        return '[\n' + ',\n'.join(f'        {z}' for z in zeilen) + '\n      ]'
-    platz = {}
-    q = json.loads(json.dumps(p))
-    for i, b in enumerate(q['baenke']):
-        platz[f'@@Z{i}@@'] = z_text(b['zellen']); b['zellen'] = f'@@Z{i}@@'
-        if b.get('anzeige') is not None: platz[f'@@A{i}@@'] = json.dumps(b['anzeige']); b['anzeige'] = f'@@A{i}@@'
-        for j, x in enumerate(b['bilder']):
-            platz[f'@@B{i}_{j}@@'] = json.dumps(x['segmente']); x['segmente'] = f'@@B{i}_{j}@@'
-    t = json.dumps(q, indent=2, ensure_ascii=False)
-    for k, v in platz.items(): t = t.replace(f'"{k}"', v)
-    assert json.loads(t) == json.loads(json.dumps(p))
-    return t + '\n'
-
-
-def projekt_lesen(fn):
-    return projekt_pruefen(json.load(open(fn, encoding='utf-8')))
-
-
-def projekt_dateiname(nr, name):
-    n = re.sub(r'[^A-Za-z0-9äöüÄÖÜß_-]+', '_', (name or '').strip()).strip('_') or 'ohne_name'
-    return f'{nr:02d}-{n}.cp1'
 
 
 def namen_lesen(text):
@@ -894,168 +655,6 @@ def assemblieren(quelltext, namen_alt='', bilder_text_=''):
             'von': 0, 'bis': max(belegt or [0])}
 
 
-
-# ------------------------------------------------ 6.10: Overlay-Pakete (JOV)
-# Quelltext mit Abschnitten:
-#   .bereich 128-255        wechselnder Bereich (Pflicht, sobald es Teile gibt)
-#   >>kern                  fester Teil (auch alles vor dem ersten >>teil); liegt in Bank 0 des Projekts
-#   >>teil 1 asteroiden     Teil für Bank 1 des Projekts, beginnt am Bereichsanfang; Name optional
-#   LADE asteroiden         -> PSK 1 / PSK Länge des Teils / JOV Bereichsanfang (auch LADE 1; im Kern und in Teilen)
-# Namen des Kerns gelten überall, Namen eines Teils nur dort (sie dürfen in jedem Teil gleich heißen).
-# Regel (nicht geprüft): JOV/LADE nie aus einem Unterprogramm, das im wechselnden Bereich liegt.
-PAKET_RE = re.compile(r'^\s*(\.bereich|>>kern|>>teil)\b', re.I | re.M)
-
-
-def ist_paket(quelltext):
-    return bool(PAKET_RE.search(quelltext or ''))
-
-
-def _code_zeile(z):
-    t = z.strip()
-    return bool(t) and not t.startswith('//') and not t.startswith('>')
-
-
-def _adressen(zeilen, start):
-    """Adressen der Befehlszeilen wie der PHP-Assembler (Zahl vorn = feste Adresse, sonst +1) -> [adresse]"""
-    out, letzte = [], start - 1
-    for z in zeilen:
-        if not _code_zeile(z): continue
-        erstes = z.strip().split()[0].rstrip(':')
-        letzte = int(erstes) if erstes.isdigit() else letzte + 1
-        out.append(letzte)
-    return out
-
-
-def paket_zerlegen(quelltext):
-    """-> (bereich (a, b) oder None, kern-Zeilen, [(k, name, zeilen)])"""
-    bereich, kern, teile, ziel = None, [], [], None
-    for z in quelltext.split('\n'):
-        t = z.strip()
-        m = re.match(r'^\.bereich\s+(\d+)\s*-\s*(\d+)\s*$', t, re.I)
-        if m:
-            bereich = (int(m.group(1)), int(m.group(2)))
-            if not 0 < bereich[0] <= bereich[1] <= 255: raise ValueError(f'.bereich {t}: 1..255, Anfang <= Ende')
-            continue
-        if re.match(r'^>>kern\s*$', t, re.I):
-            ziel = None; continue
-        m = re.match(r'^>>teil\s+(\d+)(?:\s+([A-Za-z_]\w*))?\s*$', t, re.I)
-        if m:
-            k = int(m.group(1))
-            if not 1 <= k <= 254: raise ValueError(f'>>teil {k}: Bank 1..254 des Projekts')
-            if any(x[0] == k for x in teile): raise ValueError(f'>>teil {k} doppelt')
-            teile.append((k, m.group(2) or f'teil{k}', [])); ziel = teile[-1][2]; continue
-        if t.startswith('>>'): raise ValueError(f'unbekannter Abschnitt: {t}')
-        (kern if ziel is None else ziel).append(z)
-    if teile and bereich is None: raise ValueError('Teile brauchen „.bereich a-b“')
-    return bereich, kern, teile
-
-
-def _lade_aufloesen(zeilen, teile, laengen, anfang):
-    """LADE name / LADE k -> PSK k / PSK n / JOV anfang (feste Adresse vorn bleibt an der ersten Zeile)"""
-    namen = {n.lower(): k for k, n, _ in teile}
-    out = []
-    for z in zeilen:
-        m = re.match(r'^(\s*)(\d{1,3}:?\s+)?LADE\s+(\w+)\s*(//.*)?$', z, re.I)
-        if not m: out.append(z); continue
-        w = m.group(3)
-        k = int(w) if w.isdigit() else namen.get(w.lower())
-        if k is None or k not in laengen: raise ValueError(f'LADE {w}: Teil unbekannt')
-        out += [f'{m.group(1)}{m.group(2) or ""}PSK {k}', f'{m.group(1)}PSK {laengen[k] & 0xFF}', f'{m.group(1)}JOV {anfang}']
-    return out
-
-
-def _marken(ausgabe):
-    out = {}
-    for z in ausgabe.splitlines():
-        m = re.match(r'^>([^\s:]+):\s+(\d{3})\s*$', z)
-        if m: out[m.group(1)] = int(m.group(2))
-    return out
-
-
-def paket_assemblieren(quelltext, namen_alt='', bilder_text_=''):
-    """Overlay-Paket -> dict(baenke [{zellen, namen}], bereich, teile [{k, name, laenge}], zellen/namen (= Kern),
-    quelltext (Marken mit Adressen), bilder, von, bis)"""
-    bereich, kern, teile = paket_zerlegen(quelltext)
-    bilder = bilder_lesen(bilder_text_)
-    a, b = bereich or (256, 255)
-    vorlaeufig = {k: 0 for k, _, _ in teile}
-    kern_q = sef_aufloesen('\n'.join(_lade_aufloesen(kern, teile, vorlaeufig, a)), bilder)
-    for adr in _adressen(kern_q.split('\n'), 0):
-        if a <= adr <= b: raise ValueError(f'Kern belegt Zelle {adr:03d} im wechselnden Bereich {a:03d}–{b:03d}')
-        if adr > 255: raise ValueError('Kern länger als 256 Zellen')
-    kz, kaus = asm(kern_q)
-    kern_marken = _marken(kaus)
-    # Längen aller Teile vorab (LADE wird immer zu 3 Zeilen), damit auch Teile andere Teile laden können
-    laengen = {}
-    for k, name, zeilen in teile:
-        if not [z for z in zeilen if _code_zeile(z)]: raise ValueError(f'Teil {name} ist leer')
-        tq = _lade_aufloesen(zeilen, teile, vorlaeufig, a)
-        i = next(i for i, z in enumerate(tq) if _code_zeile(z))
-        if not tq[i].strip().split()[0].rstrip(':').isdigit(): tq[i] = f'{a:03d} ' + tq[i].strip()
-        laengen[k] = max(_adressen(tq, a)) - a + 1
-    ergebnis_teile, teil_marken = [], {}
-    for k, name, zeilen in teile:
-        tq = sef_aufloesen('\n'.join(_lade_aufloesen(zeilen, teile, laengen, a)), bilder).split('\n')
-        i = next(i for i, z in enumerate(tq) if _code_zeile(z))
-        erstes = tq[i].strip().split()[0].rstrip(':')
-        if erstes.isdigit() and int(erstes) != a: raise ValueError(f'Teil {name} muss bei {a:03d} beginnen')
-        if not erstes.isdigit(): tq[i] = f'{a:03d} ' + tq[i].strip()
-        adr = _adressen(tq, a)
-        if min(adr) < a or max(adr) > b:
-            raise ValueError(f'Teil {name} passt nicht in {a:03d}–{b:03d} (reicht von {min(adr):03d} bis {max(adr):03d})')
-        eigene = {m.group(2) for z in tq for m in [MARKE_RE.match(z)] if m}
-        doppelt = eigene & set(kern_marken)
-        if doppelt: raise ValueError(f'Teil {name}: Namen auch im Kern: {", ".join(sorted(doppelt))}')
-        tz, taus = asm(kern_q + '\n' + '\n'.join(tq))
-        tm = {n: v for n, v in _marken(taus).items() if n in eigene}
-        teil_marken[k] = tm
-        ergebnis_teile.append({'k': k, 'name': name, 'laenge': laengen[k],
-                               'zellen': {n: tz[n] if a <= n <= b else (0, 0) for n in range(256)}})
-    kern_q = sef_aufloesen('\n'.join(_lade_aufloesen(kern, teile, laengen, a)), bilder)
-    kz, kaus = asm(kern_q)
-    kern_marken = _marken(kaus)
-    # Quelltext: Marken auf ihre Adressen setzen (Kern und je Teil)
-    zeilen, abschnitt = [], None
-    for z in quelltext.split('\n'):
-        t = z.strip()
-        m = re.match(r'^>>teil\s+(\d+)', t, re.I)
-        if m: abschnitt = int(m.group(1))
-        elif re.match(r'^>>kern\s*$', t, re.I): abschnitt = None
-        mm = MARKE_RE.match(z)
-        tab = kern_marken if abschnitt is None else teil_marken.get(abschnitt, {})
-        if mm and mm.group(2) in tab:
-            z = mm.group(1) + f'>{mm.group(2)}:'.ljust(28) + f'{tab[mm.group(2)]:03d}'
-        zeilen.append(z)
-    knamen = {v: n for n, v in kern_marken.items() if NAME_RE.match(n)}
-    for adr, n in namen_lesen(namen_alt).items():
-        if n not in kern_marken and adr not in knamen: knamen[adr] = n
-    baenke = {0: {'zellen': kz, 'namen': knamen}}
-    for t in ergebnis_teile:
-        baenke[t['k']] = {'zellen': t['zellen'], 'namen': {**knamen, **{v: n for n, v in teil_marken[t['k']].items() if NAME_RE.match(n)}}}
-    hoechste = max(baenke)
-    liste = [baenke.get(i, {'zellen': {n: (0, 0) for n in range(256)}, 'namen': {}}) for i in range(hoechste + 1)]
-    belegt = [n for n, v in kz.items() if v != (0, 0)]
-    return {'baenke': liste, 'bereich': bereich, 'teile': [{k: t[k] for k in ('k', 'name', 'laenge')} for t in ergebnis_teile],
-            'zellen': kz, 'namen': knamen, 'quelltext': '\n'.join(zeilen), 'bilder': bilder,
-            'von': 0, 'bis': max(belegt or [0])}
-
-
-def paket_projekt(quelltext, name, start=0, namen_alt='', bilder_text_='', anzeige=None):
-    """Overlay-Paket (oder gewöhnliches Programm) -> Projekt (dict, Format 1) mit Kern in Bank 0 und Teilen in 1, 2, …"""
-    r = paket_assemblieren(quelltext, namen_alt, bilder_text_) if ist_paket(quelltext) else \
-        dict(assemblieren(quelltext, namen_alt, bilder_text_), baenke=None)
-    baenke = r['baenke'] or [{'zellen': r['zellen'], 'namen': r['namen']}]
-    p = {'format': PROJEKT_FORMAT, 'version': PROJEKT_VERSION, 'name': name, 'start': start, 'autoboot': False,
-         'baenke': [], 'quelltext': r['quelltext'],
-         'herkunft': {'gesichert': time.strftime('%Y-%m-%d %H:%M'), 'assembliert': True}}
-    for i, b in enumerate(baenke):
-        p['baenke'].append({'zellen': [list(b['zellen'].get(n, (0, 0))) for n in range(256)],
-                            'labels': {f'{a:03d}': n for a, n in sorted(b['namen'].items())},
-                            'bilder': [{'name': n, 'segmente': list(x)} for n, x in r['bilder']] if i == 0 else [],
-                            'anzeige': list(anzeige) if anzeige and i == 0 else None})
-    return p
-
-
 def serve(port):
     from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
     leitung = Leitung()
@@ -1094,12 +693,11 @@ def serve(port):
                     leitung.tasten(req['tasten'])
                     return self.antwort(200, {'ok': True})
                 if self.path == '/api/assemblieren':
-                    paket = ist_paket(req['quelltext'])
-                    r = (paket_assemblieren if paket else assemblieren)(req['quelltext'], req.get('namen', ''), req.get('bilder', ''))
+                    r = assemblieren(req['quelltext'], req.get('namen', ''), req.get('bilder', ''))
                     return self.antwort(200, {'quelltext': r['quelltext'], 'namen': namen_text(r['namen']),
                                               'bilder': bilder_text(r['bilder']),
                                               'zellen': {f'{k:03d}': list(v) for k, v in sorted(r['zellen'].items())},
-                                              'bis': r['bis'], 'teile': r.get('teile', []), 'bereich': r.get('bereich')})
+                                              'bis': r['bis']})
                 if self.path == '/api/anzeige_vorschau':
                     return self.antwort(200, {'seg': list(anzeige_aus_text(req.get('text', ''), bool(req.get('wie_firmware'))))})
                 if self.path == '/api/disasm':
@@ -1113,35 +711,24 @@ def serve(port):
                         zellen = {int(k): tuple(v) for k, v in req['zellen'].items()}
                     voll = {i: zellen.get(i, (0, 0)) for i in range(min(zellen), max(zellen) + 1)}
                     r = leitung.laden(voll)
-                    if req.get('projekt'):          # 6.00: SEF/FRD/FWR beziehen sich auf dieses Projekt
-                        e = leitung.projekt_bank(int(req['projekt']))
-                        if e:
-                            leitung.schreib(S_PBANK, e['bank']); leitung.schreib(S_PRES, e['res'])
-                            r['projekt_bank'] = e['bank']
+                    if req.get('pbank'):            # 5.06: SEF zeigt die Bilder dieser Bank
+                        leitung.schreib(S_PBANK, int(req['pbank']) & 0xFF)
                     return self.antwort(200, r)
                 if self.path == '/api/speichern':
                     z = leitung.speichern(req.get('von'), req.get('bis'))
                     return self.antwort(200, {'zellen': {f'{k:03d}': list(v) for k, v in sorted(z.items())},
                                               'listing': disasm(z, namen_lesen(req.get('namen', '')), bilder_lesen(req.get('bilder', '')))})
                 if self.path == '/api/flash/speichern':
-                    nr = int(req['projekt'])
-                    if not 1 <= nr <= 99: raise ValueError('Projekt 1..99')
+                    b = int(req['bank'])
+                    if not 1 <= b <= 255: raise ValueError('Bank 1..255')
                     st = req.get('start')
-                    leitung.flash_speichern(nr, req.get('name', ''), None if st in (None, '') else int(st) & 255)
+                    leitung.flash_speichern(b, req.get('name', ''), None if st in (None, '') else int(st) & 255)
                     return self.antwort(200, {'ok': True})
                 if self.path == '/api/flash/laden':
-                    leitung.flash_laden(int(req['projekt']))
+                    leitung.flash_laden(int(req['bank']))
                     return self.antwort(200, {'ok': True})
                 if self.path == '/api/flash/autoboot':
-                    leitung.flash_autoboot(int(req['projekt']) % 100)
-                    return self.antwort(200, {'ok': True})
-                if self.path == '/api/projekt/einspielen':
-                    return self.antwort(200, {'nr': leitung.projekt_einspielen(projekt_pruefen(req['projekt']), req.get('nr'))})
-                if self.path == '/api/projekt/loeschen':
-                    leitung.projekt_loeschen(int(req['projekt']))
-                    return self.antwort(200, {'ok': True})
-                if self.path == '/api/bank/leeren':
-                    leitung.bank_leeren(int(req['bank']))
+                    leitung.flash_autoboot(int(req['bank']) & 255)
                     return self.antwort(200, {'ok': True})
                 if self.path == '/api/reset':
                     return self.antwort(200, {'text': leitung.reset()})
@@ -1153,40 +740,6 @@ def serve(port):
                 if self.path == '/api/zelle':
                     leitung.zelle_schreiben(int(req['zelle']), int(req['befehl']), int(req['argument']))
                     return self.antwort(200, {'ok': True})
-                if self.path == '/api/projekt/editor':          # 6.00: erste Bank des Projekts in den Editor
-                    e = leitung.projekt_bank(int(req['projekt']))
-                    if e is None: raise FlashFehler(f"Projekt {int(req['projekt'])} gibt es nicht")
-                    k = leitung.bank_komplett(e['bank'])
-                    namen = k['namen'] or namen_lesen(req.get('namen', ''))
-                    an = k['anzeige'] or (bytes(e['anzeige']) if e['anzeige'] else None)
-                    st = k['roh'][0x13]
-                    return self.antwort(200, {'projekt': e['nr'], 'bank': e['bank'], 'name': e['name'] or k['name'],
-                                              'start': 0 if st == 0xFF else st,
-                                              'namen': namen_text(namen), 'namen_aus_bank': bool(k['namen']),
-                                              'anzeige': text_aus_anzeige(an) if an else '', 'bilder': bilder_text(k['bilder']),
-                                              'zellen': {f'{a:03d}': list(v) for a, v in k['zellen'].items()},
-                                              'listing': disasm(k['zellen'], namen, k['bilder'])})
-                if self.path == '/api/projekt/editor_speichern' and ist_paket(req.get('quelltext', '')):
-                    nr = int(req['projekt']); st = req.get('start'); an = (req.get('anzeige') or '').strip()
-                    alt = leitung.projekt_bank(nr)
-                    name = req.get('name') or (alt['name'] if alt else '') or ''
-                    if st in (None, ''):
-                        st = leitung.bank_komplett(alt['bank'])['roh'][0x13] if alt else 0
-                        st = 0 if st == 0xFF else st
-                    p = paket_projekt(req['quelltext'], name, int(st) & 255, req.get('namen', ''), req.get('bilder', ''),
-                                      anzeige_aus_text(an) if an else None)
-                    leitung.projekt_einspielen(p, nr)
-                    e = leitung.projekt_bank(nr)
-                    return self.antwort(200, {'projekt': nr, 'bank': e['bank'], 'baenke': len(p['baenke'])})
-                if self.path == '/api/projekt/editor_speichern':
-                    z = {int(k): tuple(v) for k, v in req['zellen'].items()}
-                    st = req.get('start')
-                    nm, an = req.get('namen'), (req.get('anzeige') or '').strip()
-                    r = leitung.editor_speichern(int(req['projekt']), z, req.get('name') or None,
-                                                 None if st in (None, '') else int(st) & 255,
-                                                 None if nm is None else namen_lesen(nm),
-                                                 anzeige_aus_text(an) if an else None, bilder_lesen(req.get('bilder', '')))
-                    return self.antwort(200, r)
                 if self.path == '/api/bank/sichern':
                     b = int(req['bank'])
                     k = leitung.bank_komplett(b)
@@ -1196,8 +749,6 @@ def serve(port):
                                               'bilder': bilder_text(k['bilder']),
                                               'zellen': {f'{a:03d}': list(v) for a, v in k['zellen'].items()},
                                               'listing': disasm(k['zellen'], namen, k['bilder'])})
-                if self.path == '/api/projekt/sichern':
-                    return self.antwort(200, leitung.projekt_sichern(int(req['projekt']), req.get('quelltext')))
                 if self.path == '/api/bank/einspielen':
                     z = {int(k): tuple(v) for k, v in req['zellen'].items()}
                     st = req.get('start')
@@ -1275,59 +826,6 @@ def main(argv):
             {f'{k:03d}': list(v) for k, v in Leitung().zellen_lesen(n, 1).items()}
         b, a = z[f'{n:03d}']
         print(f'Zelle {n:03d} = {b:02d}.{a:03d}'); return 0
-    if cmd in ('projekt-sichern', 'alle-sichern'):
-        qt = None
-        if '--quelltext' in rest:
-            i = rest.index('--quelltext'); qt = open(rest[i + 1], encoding='utf-8').read(); rest = rest[:i] + rest[i + 2:]
-        leitung = None if srv else Leitung()
-        def hole(nr):
-            p = ueber_server('/api/projekt/sichern', {'projekt': nr, 'quelltext': qt}, port=port, timeout=300) if srv \
-                else leitung.projekt_sichern(nr, qt)
-            return projekt_pruefen(p)
-        def schreibe(p, fn):
-            tmp = fn + '.neu'; open(tmp, 'w', encoding='utf-8').write(projekt_text(p)); os.replace(tmp, fn)
-            h = p['herkunft']
-            print(f"Projekt {h['projekt']:02d} „{p['name']}“ (Bänke {', '.join(f'{x:03d}' for x in h['aus_baenken'])})"
-                  f" Start {p['start']:03d}{' Autoboot' if p['autoboot'] else ''}: "
-                  f"{sum(len(b['labels']) for b in p['baenke'])} Labels, {sum(len(b['bilder']) for b in p['baenke'])} Bilder -> {fn}")
-        if cmd == 'projekt-sichern':
-            schreibe(hole(int(rest[0])), rest[1]); return 0
-        os.makedirs(rest[0], exist_ok=True)
-        v = ueber_server('/api/flash', port=port) if srv else leitung.verzeichnis()
-        for e in v['projekte']:
-            schreibe(hole(e['nr']), os.path.join(rest[0], projekt_dateiname(e['nr'], e['name'])))
-        print(f"{len(v['projekte'])} Projekte gesichert."); return 0
-    if cmd == 'paket':
-        q = open(rest[0], encoding='utf-8').read()
-        opt = lambda n, d=None: rest[rest.index(n) + 1] if n in rest else d
-        bt = open(opt('--bilder')).read() if opt('--bilder') else ''
-        name = opt('--name', os.path.splitext(os.path.basename(rest[0]))[0])
-        p = paket_projekt(q, name, int(opt('--start', 0)), '', bt)
-        open(rest[1], 'w', encoding='utf-8').write(projekt_text(p))
-        r = paket_assemblieren(q, '', bt) if ist_paket(q) else None
-        teile = ', '.join(f"Teil {t['k']} {t['name']} {t['laenge']} Zellen" for t in r['teile']) if r else 'ohne Teile'
-        print(f"{rest[0]} -> {rest[1]}: Kern bis {(r or assemblieren(q))['bis']:03d}; {teile}"); return 0
-    if cmd == 'projekt-einspielen':
-        p = projekt_lesen(rest[0]); nr = int(rest[1]) if len(rest) > 1 else None
-        nr = ueber_server('/api/projekt/einspielen', {'projekt': p, 'nr': nr}, port=port, timeout=600)['nr'] if srv \
-            else Leitung().projekt_einspielen(p, nr)
-        print(f"{rest[0]} -> Projekt {nr:02d} „{p['name']}“"); return 0
-    if cmd == 'projekt-loeschen':
-        nr = int(rest[0])
-        if srv: ueber_server('/api/projekt/loeschen', {'projekt': nr}, port=port, timeout=300)
-        else: Leitung().projekt_loeschen(nr)
-        print(f'Projekt {nr:02d} gelöscht (die Bänke werden bei Bedarf neu vergeben)'); return 0
-    if cmd == 'bank-leeren':
-        alle = '--auch-system' in rest
-        baenke = [int(a) for a in rest if a != '--auch-system']
-        if not baenke: print('bank-leeren: welche Bank?'); return 2
-        if any(b < 4 for b in baenke) and not alle:
-            print('Bank 0..3 sind Verzeichnis und Einstellungen – nur mit --auch-system'); return 2
-        for b in baenke:
-            if srv: ueber_server('/api/bank/leeren', {'bank': b}, port=port)
-            else: Leitung().bank_leeren(b)
-            print(f'Bank {b:03d} geleert')
-        return 0
     if cmd == 'bank-sichern':
         b = int(rest[0])
         if srv:
@@ -1362,29 +860,26 @@ def main(argv):
     if cmd.startswith('flash') or cmd == 'autoboot':
         zahl = lambda i: int(rest[i])
         if cmd == 'flash':
-            v = ueber_server('/api/flash', port=port) if srv else Leitung().verzeichnis()
-            if not v['vorhanden']:
-                print('noch kein Verzeichnis (Firmware 6.00 legt es beim ersten Speichern an)'); return 0
+            v = ueber_server('/api/flash', port=port) if srv else Leitung().flash_verzeichnis()
             print(f"Autoboot: {v['autoboot'] or 'aus'}")
-            for e in v['projekte']:
-                print(f"  {e['nr']:02d}  Bänke {e['bank']:03d}–{e['bank'] + e['res'] - 1:03d}  {e['name'] or ''}"
-                      f"{'  [' + text_aus_anzeige(e['anzeige']) + ']' if e['anzeige'] else ''}")
+            for e in v['baenke']:
+                print(f"  {e['bank']:03d}  Start {e['start']:03d}  {e['name']}")
             return 0
         if cmd == 'flash-speichern':
             st = int(rest[rest.index('--start') + 1]) if '--start' in rest else None
             name = next((a for a in rest[1:] if not a.isdigit() and a != '--start'), '')
-            obj = {'projekt': zahl(0), 'name': name, 'start': st}
-            if srv: ueber_server('/api/flash/speichern', obj, port=port, timeout=300)
-            else: Leitung().flash_speichern(obj['projekt'], name, st)
-            print(f"RAM in Projekt {obj['projekt']:02d} gespeichert"); return 0
+            obj = {'bank': zahl(0), 'name': name, 'start': st}
+            if srv: ueber_server('/api/flash/speichern', obj, port=port)
+            else: Leitung().flash_speichern(obj['bank'], name, st)
+            print(f"Bank {obj['bank']:03d} gespeichert"); return 0
         if cmd == 'flash-laden':
-            if srv: ueber_server('/api/flash/laden', {'projekt': zahl(0)}, port=port)
+            if srv: ueber_server('/api/flash/laden', {'bank': zahl(0)}, port=port)
             else: Leitung().flash_laden(zahl(0))
-            print(f'Projekt {zahl(0):02d} geladen'); return 0
+            print(f'Bank {zahl(0):03d} geladen'); return 0
         if cmd == 'autoboot':
-            if srv: ueber_server('/api/flash/autoboot', {'projekt': zahl(0)}, port=port)
+            if srv: ueber_server('/api/flash/autoboot', {'bank': zahl(0)}, port=port)
             else: Leitung().flash_autoboot(zahl(0))
-            print('Autoboot', f'Projekt {zahl(0):02d}' if zahl(0) else 'aus'); return 0
+            print('Autoboot', f'Bank {zahl(0):03d}' if zahl(0) else 'aus'); return 0
     print(__doc__); return 1
 
 
